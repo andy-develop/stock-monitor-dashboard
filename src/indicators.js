@@ -1,0 +1,94 @@
+/**
+ * 技术指标计算模块
+ */
+
+/**
+ * 计算 KDJ(9,3,3)
+ * @param {Array<{open, close, high, low, date}>} klines
+ * @returns {{K: number[], D: number[], J: number[]}}
+ */
+function calculateKDJ(klines) {
+    if (!Array.isArray(klines) || klines.length < 9) {
+        throw new Error('KDJ 计算需要至少 9 条 K 线');
+    }
+
+    const kArray = [];
+    const dArray = [];
+    const jArray = [];
+    let lastK = 50;
+    let lastD = 50;
+
+    for (let i = 0; i < klines.length; i += 1) {
+        if (i < 8) {
+            kArray.push(50);
+            dArray.push(50);
+            jArray.push(50);
+            continue;
+        }
+
+        const subset = klines.slice(i - 8, i + 1);
+        const low9 = Math.min(...subset.map((k) => k.low));
+        const high9 = Math.max(...subset.map((k) => k.high));
+        const close = klines[i].close;
+
+        const rsv = high9 === low9 ? 50 : ((close - low9) / (high9 - low9)) * 100;
+        const k = (2 / 3) * lastK + (1 / 3) * rsv;
+        const d = (2 / 3) * lastD + (1 / 3) * k;
+        const j = 3 * k - 2 * d;
+
+        kArray.push(Number(k.toFixed(2)));
+        dArray.push(Number(d.toFixed(2)));
+        jArray.push(Number(j.toFixed(2)));
+
+        lastK = k;
+        lastD = d;
+    }
+
+    return { K: kArray, D: dArray, J: jArray };
+}
+
+/**
+ * 计算简单移动平均 MA
+ * @param {Array<{close: number}>} klines
+ * @param {number} period
+ * @returns {(number|null)[]}
+ */
+function calculateMA(klines, period) {
+    if (!Number.isInteger(period) || period <= 0) {
+        throw new Error('MA 周期必须是正整数');
+    }
+
+    const ma = [];
+    for (let i = 0; i < klines.length; i += 1) {
+        if (i < period - 1) {
+            ma.push(null);
+        } else {
+            const sum = klines.slice(i - period + 1, i + 1).reduce((s, k) => s + k.close, 0);
+            ma.push(Number((sum / period).toFixed(3)));
+        }
+    }
+    return ma;
+}
+
+/**
+ * 根据可用数据长度，自动选择可用的月线 MA 周期
+ * @param {Array} monthKlines
+ * @returns {{period: number|null, ma: (number|null)[]}}
+ */
+function calculateAdaptiveMonthlyMA(monthKlines) {
+    const available = monthKlines.length;
+    const candidates = [60, 48, 36, 24, 12];
+    const period = candidates.find((p) => available >= p) || null;
+
+    if (!period) {
+        return { period: null, ma: [] };
+    }
+
+    return { period, ma: calculateMA(monthKlines, period) };
+}
+
+module.exports = {
+    calculateKDJ,
+    calculateMA,
+    calculateAdaptiveMonthlyMA,
+};
