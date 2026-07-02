@@ -38,36 +38,66 @@
         }
         .alert-danger { background: #fff0f0; border-left-color: #ff4d4f; color: #a61d24; }
         .alert-success { background: #f6ffed; border-left-color: #52c41a; color: #237804; }
-        .alert-card h3 { margin: 0 0 8px 0; font-size: 18px; }
-        .alert-card p { margin: 0; font-size: 14px; line-height: 1.5; }
-        .stats-grid {
+        .alert-card h3 { margin: 0 0 10px 0; font-size: 18px; }
+        .alert-card p { margin: 0 0 12px 0; font-size: 14px; line-height: 1.5; }
+        .alert-metrics {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
         }
-        .stat-card {
+        .alert-metric {
+            background: rgba(255,255,255,0.65);
+            padding: 10px 14px;
+            border-radius: 6px;
+        }
+        .alert-metric .label { font-size: 12px; opacity: 0.8; margin-bottom: 4px; }
+        .alert-metric .value { font-size: 18px; font-weight: 600; }
+        .chart-box {
             background: #fff;
             padding: 16px 20px;
             border-radius: 8px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-        .stat-card .label { font-size: 13px; color: #888; margin-bottom: 6px; }
-        .stat-card .value { font-size: 22px; font-weight: 600; color: #1a1a1a; }
-        .chart-box {
-            background: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
             margin-bottom: 20px;
         }
-        .chart-box h2 { margin-top: 0; font-size: 18px; color: #444; }
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .chart-box h2 { margin: 0; font-size: 18px; color: #444; }
+        .toggle-btn {
+            background: #f0f2f5;
+            border: 1px solid #d9d9d9;
+            color: #333;
+            padding: 6px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .toggle-btn:hover { background: #e6e8eb; }
+        .chart-panel {
+            overflow: hidden;
+            transition: max-height 0.35s ease, opacity 0.25s ease;
+        }
+        .chart-panel.collapsed {
+            max-height: 0;
+            opacity: 0;
+            margin-top: 0;
+        }
+        .chart-panel.expanded {
+            max-height: 560px;
+            opacity: 1;
+            margin-top: 14px;
+        }
         .chart { width: 100%; height: 500px; }
         @media (max-width: 768px) {
             body { padding: 10px; }
             .header { flex-direction: column; align-items: flex-start; }
             .header .meta { text-align: left; }
             .chart { height: 360px; }
+            .chart-panel.expanded { max-height: 420px; }
         }
     </style>
 </head>
@@ -86,16 +116,24 @@
 
         <div id="alerts-container"></div>
 
-        <div class="stats-grid" id="stats-container"></div>
-
         <div class="chart-box">
-            <h2>周K线及 KDJ(9,3,3) 联动趋势图</h2>
-            <div id="week-chart" class="chart"></div>
+            <div class="chart-header">
+                <h2>周K线及 KDJ(9,3,3) 联动趋势图</h2>
+                <button class="toggle-btn" type="button" data-target="week-chart-panel" data-chart="week">展开</button>
+            </div>
+            <div id="week-chart-panel" class="chart-panel collapsed">
+                <div id="week-chart" class="chart"></div>
+            </div>
         </div>
 
         <div class="chart-box">
-            <h2>月K线及 MA 趋势图</h2>
-            <div id="month-chart" class="chart"></div>
+            <div class="chart-header">
+                <h2>月K线及 MA 趋势图</h2>
+                <button class="toggle-btn" type="button" data-target="month-chart-panel" data-chart="month">展开</button>
+            </div>
+            <div id="month-chart-panel" class="chart-panel collapsed">
+                <div id="month-chart" class="chart"></div>
+            </div>
         </div>
     </div>
 
@@ -120,93 +158,131 @@
         data.alerts.forEach(alert => {
             const card = document.createElement('div');
             card.className = `alert-card alert-${alert.type}`;
-            card.innerHTML = `<h3>${alert.title}</h3><p>${alert.reason}</p>`;
+
+            let metricsHtml = '';
+            if (alert.metrics && alert.metrics.length > 0) {
+                const items = alert.metrics.map(m => `
+                    <div class="alert-metric">
+                        <div class="label">${m.label}</div>
+                        <div class="value">${m.value}</div>
+                    </div>
+                `).join('');
+                metricsHtml = `<div class="alert-metrics">${items}</div>`;
+            }
+
+            card.innerHTML = `<h3>${alert.title}</h3><p>${alert.reason}</p>${metricsHtml}`;
             alertsContainer.appendChild(card);
         });
 
-        // 统计卡片
-        const statsContainer = document.getElementById('stats-container');
-        const stats = [
-            { label: '最新周收盘价', value: data.weekData.latestClose },
-            { label: '最新周 J 值', value: data.weekData.latestJ },
-            { label: '最新月收盘价', value: data.monthData.latestClose },
-            { label: data.monthData.maPeriod ? `MA${data.monthData.maPeriod}` : 'MA 不可用', value: data.monthData.latestMA ?? '数据不足' },
-        ];
-        stats.forEach(stat => {
-            const card = document.createElement('div');
-            card.className = 'stat-card';
-            card.innerHTML = `<div class="label">${stat.label}</div><div class="value">${stat.value}</div>`;
-            statsContainer.appendChild(card);
-        });
+        // 图表懒初始化
+        const chartInstances = {};
 
-        // 周线 KDJ 图
-        const weekChart = echarts.init(document.getElementById('week-chart'));
-        weekChart.setOption({
-            grid: [
-                { left: '8%', right: '4%', top: '10%', height: '45%' },
-                { left: '8%', right: '4%', top: '62%', height: '28%' }
-            ],
-            tooltip: {
-                trigger: 'axis',
-                axisPointer: { type: 'cross' }
-            },
-            legend: { data: ['周K线', 'K', 'D', 'J'], top: 0 },
-            xAxis: [
-                { type: 'category', data: data.weekData.dates, gridIndex: 0, axisLine: { onZero: false } },
-                { type: 'category', data: data.weekData.dates, gridIndex: 1 }
-            ],
-            yAxis: [
-                { scale: true, splitArea: { show: true }, gridIndex: 0 },
-                { min: 0, max: 100, gridIndex: 1 }
-            ],
-            dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], start: 50, end: 100 }],
-            series: [
-                {
-                    name: '周K线',
-                    type: 'candlestick',
-                    data: data.weekData.candlestick,
-                    xAxisIndex: 0,
-                    yAxisIndex: 0,
-                    itemStyle: {
-                        color: '#ef5350',
-                        color0: '#26a69a',
-                        borderColor: '#ef5350',
-                        borderColor0: '#26a69a'
-                    }
+        function initWeekChart() {
+            if (chartInstances.week) return chartInstances.week;
+            const weekChart = echarts.init(document.getElementById('week-chart'));
+            weekChart.setOption({
+                grid: [
+                    { left: '8%', right: '4%', top: '10%', height: '45%' },
+                    { left: '8%', right: '4%', top: '62%', height: '28%' }
+                ],
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'cross' }
                 },
-                { name: 'K', type: 'line', data: data.weekData.k, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, itemStyle: { color: '#e0a926' } },
-                { name: 'D', type: 'line', data: data.weekData.d, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, itemStyle: { color: '#3277c9' } },
-                { name: 'J', type: 'line', data: data.weekData.j, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, itemStyle: { color: '#c437a3' } }
-            ]
-        });
-
-        // 月线 MA 图
-        const monthChart = echarts.init(document.getElementById('month-chart'));
-        const monthOption = {
-            tooltip: { trigger: 'axis' },
-            legend: { data: ['收盘价', 'MA'], top: 0 },
-            xAxis: { type: 'category', data: data.monthData.dates },
-            yAxis: { scale: true, splitArea: { show: true } },
-            dataZoom: [{ type: 'inside', start: 0, end: 100 }],
-            series: [
-                { name: '收盘价', type: 'line', data: data.monthData.closes, showSymbol: false, itemStyle: { color: '#3277c9' }, areaStyle: { opacity: 0.1 } }
-            ]
-        };
-        if (data.monthData.maPeriod) {
-            monthOption.series.push({
-                name: `MA${data.monthData.maPeriod}`,
-                type: 'line',
-                data: data.monthData.ma,
-                showSymbol: false,
-                itemStyle: { color: '#e0a926' }
+                legend: { data: ['周K线', 'K', 'D', 'J'], top: 0 },
+                xAxis: [
+                    { type: 'category', data: data.weekData.dates, gridIndex: 0, axisLine: { onZero: false } },
+                    { type: 'category', data: data.weekData.dates, gridIndex: 1 }
+                ],
+                yAxis: [
+                    { scale: true, splitArea: { show: true }, gridIndex: 0 },
+                    { min: 0, max: 100, gridIndex: 1 }
+                ],
+                dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], start: 50, end: 100 }],
+                series: [
+                    {
+                        name: '周K线',
+                        type: 'candlestick',
+                        data: data.weekData.candlestick,
+                        xAxisIndex: 0,
+                        yAxisIndex: 0,
+                        itemStyle: {
+                            color: '#ef5350',
+                            color0: '#26a69a',
+                            borderColor: '#ef5350',
+                            borderColor0: '#26a69a'
+                        }
+                    },
+                    { name: 'K', type: 'line', data: data.weekData.k, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, itemStyle: { color: '#e0a926' } },
+                    { name: 'D', type: 'line', data: data.weekData.d, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, itemStyle: { color: '#3277c9' } },
+                    { name: 'J', type: 'line', data: data.weekData.j, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, itemStyle: { color: '#c437a3' } }
+                ]
             });
-            monthOption.legend.data.push(`MA${data.monthData.maPeriod}`);
+            chartInstances.week = weekChart;
+            return weekChart;
         }
-        monthChart.setOption(monthOption);
+
+        function initMonthChart() {
+            if (chartInstances.month) return chartInstances.month;
+            const monthChart = echarts.init(document.getElementById('month-chart'));
+            const monthOption = {
+                tooltip: { trigger: 'axis' },
+                legend: { data: ['收盘价', 'MA'], top: 0 },
+                xAxis: { type: 'category', data: data.monthData.dates },
+                yAxis: { scale: true, splitArea: { show: true } },
+                dataZoom: [{ type: 'inside', start: 0, end: 100 }],
+                series: [
+                    { name: '收盘价', type: 'line', data: data.monthData.closes, showSymbol: false, itemStyle: { color: '#3277c9' }, areaStyle: { opacity: 0.1 } }
+                ]
+            };
+            if (data.monthData.maPeriod) {
+                monthOption.series.push({
+                    name: `MA${data.monthData.maPeriod}`,
+                    type: 'line',
+                    data: data.monthData.ma,
+                    showSymbol: false,
+                    itemStyle: { color: '#e0a926' }
+                });
+                monthOption.legend.data.push(`MA${data.monthData.maPeriod}`);
+            }
+            monthChart.setOption(monthOption);
+            chartInstances.month = monthChart;
+            return monthChart;
+        }
+
+        // 折叠/展开交互
+        document.querySelectorAll('.toggle-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const targetId = btn.getAttribute('data-target');
+                const chartKey = btn.getAttribute('data-chart');
+                const panel = document.getElementById(targetId);
+                const isCollapsed = panel.classList.contains('collapsed');
+
+                if (isCollapsed) {
+                    panel.classList.remove('collapsed');
+                    panel.classList.add('expanded');
+                    btn.innerText = '收起';
+
+                    // 展开后再初始化/调整图表，避免隐藏容器内尺寸为 0
+                    requestAnimationFrame(() => {
+                        if (chartKey === 'week') {
+                            const chart = initWeekChart();
+                            chart.resize();
+                        } else if (chartKey === 'month') {
+                            const chart = initMonthChart();
+                            chart.resize();
+                        }
+                    });
+                } else {
+                    panel.classList.remove('expanded');
+                    panel.classList.add('collapsed');
+                    btn.innerText = '展开';
+                }
+            });
+        });
 
         window.addEventListener('resize', () => {
-            weekChart.resize();
-            monthChart.resize();
+            Object.values(chartInstances).forEach(chart => chart.resize());
         });
     </script>
 </body>

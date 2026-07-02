@@ -24,32 +24,39 @@ function copyEcharts() {
     console.log(`已复制 ECharts 到 ${path.relative(__dirname, ECHARTS_DEST)}`);
 }
 
-function evaluateAlerts({ latestJ, latestMonthClose, latestMA, maPeriod }) {
+function evaluateAlerts({ latestWeekClose, latestJ, latestMonthClose, latestMA, maPeriod }) {
     const alerts = [];
 
-    if (latestJ < 1) {
-        alerts.push({
-            type: 'danger',
-            title: '⚠️ 周K线 KDJ 预警',
-            reason: `当前周K线计算的 J 值为 **${latestJ}**，已跌破安全阈值 1。`,
-        });
-    }
+    // 周K线 KDJ：始终列出，触发则 danger，否则 success
+    const weekTriggered = latestJ < 1;
+    alerts.push({
+        type: weekTriggered ? 'danger' : 'success',
+        title: weekTriggered ? '⚠️ 周K线 KDJ 预警' : '✅ 周K线 KDJ 正常',
+        metrics: [
+            { label: '最新周收盘价', value: latestWeekClose },
+            { label: '最新周 J 值', value: latestJ },
+        ],
+        reason: weekTriggered
+            ? `当前周K线计算的 J 值为 ${latestJ}，已跌破安全阈值 1。`
+            : `当前周K线计算的 J 值为 ${latestJ}，未跌破安全阈值 1。`,
+    });
 
-    if (latestMA !== null && latestMA !== undefined && latestMonthClose < latestMA) {
-        alerts.push({
-            type: 'danger',
-            title: `⚠️ 月K线 MA${maPeriod} 破位预警`,
-            reason: `当前月K线收盘价 **${latestMonthClose}** 已跌破 ${maPeriod}月均线 (**${latestMA}**)。`,
-        });
-    }
-
-    if (alerts.length === 0) {
-        alerts.push({
-            type: 'success',
-            title: '✅ 运行状态正常',
-            reason: '各项监控指标均在安全范围内，未触发预警。',
-        });
-    }
+    // 月K线 MA：始终列出（数据可用时），触发则 danger，否则 success
+    const maAvailable = latestMA !== null && latestMA !== undefined;
+    const monthTriggered = maAvailable && latestMonthClose < latestMA;
+    alerts.push({
+        type: monthTriggered ? 'danger' : 'success',
+        title: monthTriggered ? `⚠️ 月K线 MA${maPeriod} 破位预警` : `✅ 月K线 MA${maPeriod} 正常`,
+        metrics: [
+            { label: '最新月收盘价', value: latestMonthClose },
+            { label: maPeriod ? `MA${maPeriod}` : 'MA', value: maAvailable ? latestMA : '数据不足' },
+        ],
+        reason: monthTriggered
+            ? `当前月K线收盘价 ${latestMonthClose} 已跌破 ${maPeriod}月均线 (${latestMA})。`
+            : maAvailable
+                ? `当前月K线收盘价 ${latestMonthClose} 位于 ${maPeriod}月均线 (${latestMA}) 之上。`
+                : '月线数据不足，无法计算 MA。',
+    });
 
     return alerts;
 }
@@ -74,8 +81,10 @@ async function main() {
         const latestJ = kdjResult.J[kdjResult.J.length - 1];
         const latestMonth = monthKlines[monthKlines.length - 1];
         const latestMA = maResult.ma[maResult.ma.length - 1];
+        const latestWeek = weekKlines[weekKlines.length - 1];
 
         const alerts = evaluateAlerts({
+            latestWeekClose: latestWeek.close,
             latestJ,
             latestMonthClose: latestMonth.close,
             latestMA,
