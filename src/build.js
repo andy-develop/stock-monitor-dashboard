@@ -191,8 +191,8 @@ function evaluateConsumerSellSignals({ dayKlines, ma5, ma20 }) {
     const signal2 = (latestMADev5_20 !== null && latestMADev5_20 > 7)
         || (latestPriceDev20 !== null && latestPriceDev20 > 10);
 
-    // 信号 3：动能衰竭
-    const signal3 = latestMomentumExhaustion;
+    // 信号 3：动能衰竭（收盘价或最低价连续 2 日走低）
+    const signal3 = momentumDetails.closeDays >= 2 || momentumDetails.lowDays >= 2;
 
     const triggeredCount = [signal1, signal2, signal3].filter(Boolean).length;
 
@@ -231,11 +231,9 @@ function evaluateConsumerSellSignals({ dayKlines, ma5, ma20 }) {
             ],
             reason,
             signalDetails: [
-                { label: '近10日高点回撤 > 4%', triggered: signal1, value: latestHigh10 ? `回撤 ${((1 - latestClose / latestHigh10) * 100).toFixed(2)}%` : '-' },
-                { label: 'MA5/MA20 > 7%', triggered: latestMADev5_20 !== null && latestMADev5_20 > 7, value: `当前值 ${latestMADev5_20}%` },
-                { label: '价格/MA20 > 10%', triggered: latestPriceDev20 !== null && latestPriceDev20 > 10, value: `当前值 ${latestPriceDev20}%` },
-                { label: 'Close_t < Close_{t-1}（收盘价下跌）', triggered: momentumDetails.closeDays >= 2, value: `当前满足 ${momentumDetails.closeDays} 天 ${momentumDetails.closeDays >= 2 ? '☑️' : '❌'}` },
-                { label: 'Low_t < Low_{t-1}（最低价也在变低）', triggered: momentumDetails.lowDays >= 2, value: `当前满足 ${momentumDetails.lowDays} 天 ${momentumDetails.lowDays >= 2 ? '☑️' : '❌'}` },
+                { label: '近10日高点回撤 > 4%', triggered: signal1, value: latestHigh10 ? `当前 ${((1 - latestClose / latestHigh10) * 100).toFixed(2)}%` : '-' },
+                { label: 'MA5/MA20 > 7% 或 价格/MA20 > 10%', triggered: signal2, value: `MA5/MA20 ${latestMADev5_20}% / 价格/MA20 ${latestPriceDev20}%` },
+                { label: 'Close_t < Close_{t-1} 或 Low_t < Low_{t-1}', triggered: signal3, value: `收盘价下跌 ${momentumDetails.closeDays} 天 / 最低价走低 ${momentumDetails.lowDays} 天` },
             ],
         },
         dayData: {

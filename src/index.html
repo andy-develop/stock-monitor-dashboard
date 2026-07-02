@@ -229,7 +229,7 @@
             if (!details || details.length === 0) return '';
             const items = details.map(d => `
                 <div class="signal-detail">
-                    <span class="dot ${d.triggered ? 'on' : 'off'}"></span>
+                    <span>${d.triggered ? '✅' : '❌'}</span>
                     <span>${d.label}：${d.value}</span>
                 </div>
             `).join('');
