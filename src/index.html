@@ -44,7 +44,7 @@
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
             gap: 10px;
-            margin-top: 10px;
+            margin-bottom: 14px;
         }
         .alert-metric {
             background: rgba(255,255,255,0.65);
@@ -54,29 +54,28 @@
         .alert-metric .label { font-size: 12px; opacity: 0.8; margin-bottom: 4px; }
         .alert-metric .value { font-size: 18px; font-weight: 600; }
         .chart-box {
-            background: #fff;
-            padding: 16px 20px;
+            background: rgba(255,255,255,0.55);
             border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            margin-bottom: 20px;
+            padding: 12px 14px;
+            margin-top: 10px;
         }
         .chart-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
-        .chart-box h2 { margin: 0; font-size: 18px; color: #444; }
+        .chart-box h2 { margin: 0; font-size: 16px; color: #444; }
         .toggle-btn {
-            background: #f0f2f5;
-            border: 1px solid #d9d9d9;
+            background: rgba(255,255,255,0.9);
+            border: 1px solid rgba(0,0,0,0.12);
             color: #333;
-            padding: 6px 14px;
+            padding: 5px 12px;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 13px;
             transition: all 0.2s;
         }
-        .toggle-btn:hover { background: #e6e8eb; }
+        .toggle-btn:hover { background: rgba(255,255,255,1); }
         .chart-panel {
             overflow: hidden;
             transition: max-height 0.35s ease, opacity 0.25s ease;
@@ -89,7 +88,7 @@
         .chart-panel.expanded {
             max-height: 560px;
             opacity: 1;
-            margin-top: 14px;
+            margin-top: 12px;
         }
         .chart { width: 100%; height: 500px; }
         @media (max-width: 768px) {
@@ -115,26 +114,6 @@
         </div>
 
         <div id="alerts-container"></div>
-
-        <div class="chart-box">
-            <div class="chart-header">
-                <h2>周K线及 KDJ(9,3,3) 联动趋势图</h2>
-                <button class="toggle-btn" type="button" data-target="week-chart-panel" data-chart="week">展开</button>
-            </div>
-            <div id="week-chart-panel" class="chart-panel collapsed">
-                <div id="week-chart" class="chart"></div>
-            </div>
-        </div>
-
-        <div class="chart-box">
-            <div class="chart-header">
-                <h2>月K线及 MA 趋势图</h2>
-                <button class="toggle-btn" type="button" data-target="month-chart-panel" data-chart="month">展开</button>
-            </div>
-            <div id="month-chart-panel" class="chart-panel collapsed">
-                <div id="month-chart" class="chart"></div>
-            </div>
-        </div>
     </div>
 
     <script>
@@ -153,9 +132,10 @@
         document.getElementById('stock-subtitle').innerText = `${data.indexName} · 自动化监控`;
         document.getElementById('update-time').innerText = `更新时间：${data.updateTime}`;
 
-        // 预警卡片
+        // 预警/状态卡片 + 内置图表
         const alertsContainer = document.getElementById('alerts-container');
-        data.alerts.forEach(alert => {
+
+        data.alerts.forEach((alert, index) => {
             const card = document.createElement('div');
             card.className = `alert-card alert-${alert.type}`;
 
@@ -170,7 +150,34 @@
                 metricsHtml = `<div class="alert-metrics">${items}</div>`;
             }
 
-            card.innerHTML = `<h3>${alert.title}</h3><p>${alert.reason}</p>${metricsHtml}`;
+            let chartHtml = '';
+            if (alert.chartKey === 'week') {
+                chartHtml = `
+                    <div class="chart-box">
+                        <div class="chart-header">
+                            <h2>周K线及 KDJ(9,3,3) 联动趋势图</h2>
+                            <button class="toggle-btn" type="button" data-target="week-chart-panel" data-chart="week">展开</button>
+                        </div>
+                        <div id="week-chart-panel" class="chart-panel collapsed">
+                            <div id="week-chart" class="chart"></div>
+                        </div>
+                    </div>
+                `;
+            } else if (alert.chartKey === 'month') {
+                chartHtml = `
+                    <div class="chart-box">
+                        <div class="chart-header">
+                            <h2>月K线及 MA 趋势图</h2>
+                            <button class="toggle-btn" type="button" data-target="month-chart-panel" data-chart="month">展开</button>
+                        </div>
+                        <div id="month-chart-panel" class="chart-panel collapsed">
+                            <div id="month-chart" class="chart"></div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            card.innerHTML = `<h3>${alert.title}</h3><p>${alert.reason}</p>${metricsHtml}${chartHtml}`;
             alertsContainer.appendChild(card);
         });
 
@@ -263,7 +270,6 @@
                     panel.classList.add('expanded');
                     btn.innerText = '收起';
 
-                    // 展开后再初始化/调整图表，避免隐藏容器内尺寸为 0
                     requestAnimationFrame(() => {
                         if (chartKey === 'week') {
                             const chart = initWeekChart();

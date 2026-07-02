@@ -32,6 +32,7 @@ function evaluateAlerts({ latestWeekClose, latestJ, latestMonthClose, latestMA, 
     alerts.push({
         type: weekTriggered ? 'danger' : 'success',
         title: weekTriggered ? '⚠️ 周K线 KDJ 预警' : '✅ 周K线 KDJ 正常',
+        chartKey: 'week',
         metrics: [
             { label: '最新周收盘价', value: latestWeekClose },
             { label: '最新周 J 值', value: latestJ },
@@ -47,6 +48,7 @@ function evaluateAlerts({ latestWeekClose, latestJ, latestMonthClose, latestMA, 
     alerts.push({
         type: monthTriggered ? 'danger' : 'success',
         title: monthTriggered ? `⚠️ 月K线 MA${maPeriod} 破位预警` : `✅ 月K线 MA${maPeriod} 正常`,
+        chartKey: 'month',
         metrics: [
             { label: '最新月收盘价', value: latestMonthClose },
             { label: maPeriod ? `MA${maPeriod}` : 'MA', value: maAvailable ? latestMA : '数据不足' },
