@@ -43,11 +43,46 @@
         }
         .signal-card:last-child { margin-bottom: 0; }
         .signal-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             margin: 0;
             padding: 16px 20px;
             font-size: 18px;
             color: #fff;
             background: #2c3e50;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.25s ease;
+        }
+        .signal-title:hover { opacity: 0.95; }
+        .signal-title .signal-toggle-btn {
+            background: rgba(255,255,255,0.2);
+            border: 1px solid rgba(255,255,255,0.4);
+            color: #fff;
+            padding: 5px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+        .signal-title .signal-toggle-btn:hover { background: rgba(255,255,255,0.3); }
+        .signal-title.danger { background: #c62828; }
+        .signal-title.danger:hover { background: #b71c1c; }
+        .signals-list {
+            overflow: hidden;
+            transition: max-height 0.35s ease, opacity 0.25s ease, padding 0.25s ease;
+        }
+        .signals-list.collapsed {
+            max-height: 0;
+            opacity: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+        }
+        .signals-list.expanded {
+            max-height: 2000px;
+            opacity: 1;
+            padding: 16px 20px;
         }
         .signals-list { padding: 16px 20px; }
         .alert-card {
@@ -142,13 +177,19 @@
             </div>
 
             <div class="signal-card">
-                <h2 class="signal-title">买入信号</h2>
-                <div class="signals-list" id="buy-signals-container"></div>
+                <h2 class="signal-title" data-target="buy-signals-container">
+                    <span>买入信号</span>
+                    <button class="signal-toggle-btn" type="button" data-target="buy-signals-container">展开</button>
+                </h2>
+                <div class="signals-list collapsed" id="buy-signals-container"></div>
             </div>
 
             <div class="signal-card">
-                <h2 class="signal-title">卖出信号</h2>
-                <div class="signals-list" id="sell-signals-container"></div>
+                <h2 class="signal-title" data-target="sell-signals-container">
+                    <span>卖出信号</span>
+                    <button class="signal-toggle-btn" type="button" data-target="sell-signals-container">展开</button>
+                </h2>
+                <div class="signals-list collapsed" id="sell-signals-container"></div>
             </div>
         </div>
     </div>
@@ -275,6 +316,43 @@
         } else {
             sellSignalsContainer.innerHTML = '<div class="empty-state">暂无卖出信号</div>';
         }
+
+        // 根据子模块 alert 类型设置大标题栏颜色
+        function updateSignalTitleColor(containerId) {
+            const container = document.getElementById(containerId);
+            const title = document.querySelector(`.signal-title[data-target="${containerId}"]`);
+            const hasDanger = container.querySelector('.alert-danger') !== null;
+            if (hasDanger) {
+                title.classList.add('danger');
+            }
+        }
+
+        updateSignalTitleColor('buy-signals-container');
+        updateSignalTitleColor('sell-signals-container');
+
+        // 大信号卡片折叠/展开交互
+        document.querySelectorAll('.signal-title, .signal-toggle-btn').forEach(el => {
+            el.addEventListener('click', (e) => {
+                // 如果点击的是展开按钮，避免触发标题点击导致两次切换
+                if (e.target.classList.contains('signal-toggle-btn')) {
+                    e.stopPropagation();
+                }
+                const targetId = el.getAttribute('data-target');
+                const panel = document.getElementById(targetId);
+                const btn = document.querySelector(`.signal-toggle-btn[data-target="${targetId}"]`);
+                const isCollapsed = panel.classList.contains('collapsed');
+
+                if (isCollapsed) {
+                    panel.classList.remove('collapsed');
+                    panel.classList.add('expanded');
+                    btn.innerText = '收起';
+                } else {
+                    panel.classList.remove('expanded');
+                    panel.classList.add('collapsed');
+                    btn.innerText = '展开';
+                }
+            });
+        });
 
         // 图表懒初始化
         const chartInstances = {};
