@@ -30,15 +30,31 @@
         .header h1 { margin: 0; font-size: 24px; color: #1a1a1a; }
         .header .subtitle { margin: 5px 0 0 0; color: #666; font-size: 14px; }
         .header .meta { text-align: right; color: #888; font-size: 13px; }
+        .signal-card {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        .signal-title {
+            margin: 0;
+            padding: 16px 20px;
+            font-size: 18px;
+            color: #fff;
+            background: #2c3e50;
+        }
+        .signals-list { padding: 16px 20px; }
         .alert-card {
-            padding: 15px 20px;
+            padding: 15px 18px;
             border-radius: 6px;
-            margin-bottom: 15px;
+            margin-bottom: 14px;
             border-left: 5px solid;
         }
+        .alert-card:last-child { margin-bottom: 0; }
         .alert-danger { background: #fff0f0; border-left-color: #ff4d4f; color: #a61d24; }
         .alert-success { background: #f6ffed; border-left-color: #52c41a; color: #237804; }
-        .alert-card h3 { margin: 0 0 10px 0; font-size: 18px; }
+        .alert-card h3 { margin: 0 0 10px 0; font-size: 17px; }
         .alert-card p { margin: 0 0 12px 0; font-size: 14px; line-height: 1.5; }
         .alert-metrics {
             display: grid;
@@ -64,7 +80,7 @@
             justify-content: space-between;
             align-items: center;
         }
-        .chart-box h2 { margin: 0; font-size: 16px; color: #444; }
+        .chart-box h2 { margin: 0; font-size: 15px; color: #444; }
         .toggle-btn {
             background: rgba(255,255,255,0.9);
             border: 1px solid rgba(0,0,0,0.12);
@@ -91,6 +107,12 @@
             margin-top: 12px;
         }
         .chart { width: 100%; height: 500px; }
+        .empty-state {
+            padding: 40px 20px;
+            text-align: center;
+            color: #999;
+            font-size: 14px;
+        }
         @media (max-width: 768px) {
             body { padding: 10px; }
             .header { flex-direction: column; align-items: flex-start; }
@@ -113,7 +135,17 @@
             </div>
         </div>
 
-        <div id="alerts-container"></div>
+        <div class="signal-card">
+            <h2 class="signal-title">买入信号</h2>
+            <div class="signals-list" id="buy-signals-container"></div>
+        </div>
+
+        <div class="signal-card">
+            <h2 class="signal-title">卖出信号</h2>
+            <div class="signals-list">
+                <div class="empty-state">暂无卖出信号</div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -132,10 +164,10 @@
         document.getElementById('stock-subtitle').innerText = `${data.indexName} · 自动化监控`;
         document.getElementById('update-time').innerText = `更新时间：${data.updateTime}`;
 
-        // 预警/状态卡片 + 内置图表
-        const alertsContainer = document.getElementById('alerts-container');
+        // 买入信号模块（包含周K线和月K线两个 alert）
+        const buySignalsContainer = document.getElementById('buy-signals-container');
 
-        data.alerts.forEach((alert, index) => {
+        data.alerts.forEach((alert) => {
             const card = document.createElement('div');
             card.className = `alert-card alert-${alert.type}`;
 
@@ -178,7 +210,7 @@
             }
 
             card.innerHTML = `<h3>${alert.title}</h3><p>${alert.reason}</p>${metricsHtml}${chartHtml}`;
-            alertsContainer.appendChild(card);
+            buySignalsContainer.appendChild(card);
         });
 
         // 图表懒初始化
