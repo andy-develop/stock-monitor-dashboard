@@ -245,6 +245,38 @@ function detectMomentumExhaustion(klines) {
     return result;
 }
 
+
+/**
+ * 计算最新动能衰竭细节：收盘价下跌和最低价下跌的连续天数
+ * @param {Array<{close: number, low: number}>} klines
+ * @returns {{ closeDays: number, lowDays: number }}
+ */
+function detectMomentumExhaustionDetails(klines) {
+    if (klines.length < 3) {
+        return { closeDays: 0, lowDays: 0 };
+    }
+
+    let closeDays = 0;
+    for (let i = klines.length - 1; i >= 1; i -= 1) {
+        if (klines[i].close < klines[i - 1].close) {
+            closeDays += 1;
+        } else {
+            break;
+        }
+    }
+
+    let lowDays = 0;
+    for (let i = klines.length - 1; i >= 1; i -= 1) {
+        if (klines[i].low < klines[i - 1].low) {
+            lowDays += 1;
+        } else {
+            break;
+        }
+    }
+
+    return { closeDays, lowDays };
+}
+
 module.exports = {
     calculateKDJ,
     calculateMA,
@@ -255,4 +287,5 @@ module.exports = {
     calculatePriceMADeviation,
     calculateMADeviation,
     detectMomentumExhaustion,
+    detectMomentumExhaustionDetails,
 };

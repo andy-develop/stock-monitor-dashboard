@@ -14,6 +14,7 @@ const {
     calculatePriceMADeviation,
     calculateMADeviation,
     detectMomentumExhaustion,
+    detectMomentumExhaustionDetails,
 } = require('./indicators');
 const { renderHtml } = require('./render');
 
@@ -177,6 +178,7 @@ function evaluateConsumerSellSignals({ dayKlines, ma5, ma20 }) {
     const priceDev20 = calculatePriceMADeviation(dayKlines, 20);
     const maDev5_20 = calculateMADeviation(dayKlines, 5, 20);
     const momentumExhaustion = detectMomentumExhaustion(dayKlines);
+    const momentumDetails = detectMomentumExhaustionDetails(dayKlines);
 
     const latestPriceDev20 = priceDev20[latestIndex];
     const latestMADev5_20 = maDev5_20[latestIndex];
@@ -230,8 +232,10 @@ function evaluateConsumerSellSignals({ dayKlines, ma5, ma20 }) {
             reason,
             signalDetails: [
                 { label: '近10日高点回撤 > 4%', triggered: signal1, value: latestHigh10 ? `回撤 ${((1 - latestClose / latestHigh10) * 100).toFixed(2)}%` : '-' },
-                { label: '均线偏离度超限', triggered: signal2, value: `MA5/MA20=${latestMADev5_20}%, 价格/MA20=${latestPriceDev20}%` },
-                { label: '连续2日下跌且低点走低', triggered: signal3, value: latestMomentumExhaustion ? '是' : '否' },
+                { label: 'MA5/MA20 > 7%', triggered: latestMADev5_20 !== null && latestMADev5_20 > 7, value: `当前值 ${latestMADev5_20}%` },
+                { label: '价格/MA20 > 10%', triggered: latestPriceDev20 !== null && latestPriceDev20 > 10, value: `当前值 ${latestPriceDev20}%` },
+                { label: 'Close_t < Close_{t-1}（收盘价下跌）', triggered: momentumDetails.closeDays >= 2, value: `当前满足 ${momentumDetails.closeDays} 天 ${momentumDetails.closeDays >= 2 ? '☑️' : '❌'}` },
+                { label: 'Low_t < Low_{t-1}（最低价也在变低）', triggered: momentumDetails.lowDays >= 2, value: `当前满足 ${momentumDetails.lowDays} 天 ${momentumDetails.lowDays >= 2 ? '☑️' : '❌'}` },
             ],
         },
         dayData: {
