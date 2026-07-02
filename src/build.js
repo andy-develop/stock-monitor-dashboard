@@ -379,13 +379,33 @@ async function buildShuanghuiWindow() {
     });
 }
 
+async function buildDeejWindow() {
+    return buildConsumerWindow({
+        id: 'deej',
+        code: 'SZ000423',
+        name: '东阿阿胶',
+        thresholds: { value: 45, pessimistic: 42, iron: 20 },
+    });
+}
+
+async function buildSanquanWindow() {
+    return buildConsumerWindow({
+        id: 'sanquan',
+        code: 'SZ002216',
+        name: '三全食品',
+        thresholds: { value: 11, pessimistic: 10, iron: 8 },
+    });
+}
+
 async function main() {
     try {
         const etfWindow = await buildEtfWindow();
         const greeWindow = await buildGreeWindow();
         const shuanghuiWindow = await buildShuanghuiWindow();
+        const deejWindow = await buildDeejWindow();
+        const sanquanWindow = await buildSanquanWindow();
 
-        const dashboardData = [etfWindow, greeWindow, shuanghuiWindow];
+        const dashboardData = [etfWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow];
 
         renderHtml(dashboardData, DIST_DIR);
         copyEcharts();
@@ -396,6 +416,8 @@ async function main() {
                 { id: etfWindow.id, stockCode: etfWindow.stockCode, alerts: etfWindow.buyAlerts, sellAlert: etfWindow.sellAlert },
                 { id: greeWindow.id, stockCode: greeWindow.stockCode, buyAlerts: greeWindow.buyAlerts, sellAlert: greeWindow.sellAlert },
                 { id: shuanghuiWindow.id, stockCode: shuanghuiWindow.stockCode, buyAlerts: shuanghuiWindow.buyAlerts, sellAlert: shuanghuiWindow.sellAlert },
+                { id: deejWindow.id, stockCode: deejWindow.stockCode, buyAlerts: deejWindow.buyAlerts, sellAlert: deejWindow.sellAlert },
+                { id: sanquanWindow.id, stockCode: sanquanWindow.stockCode, buyAlerts: sanquanWindow.buyAlerts, sellAlert: sanquanWindow.sellAlert },
             ],
         });
 
