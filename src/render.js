@@ -49,7 +49,7 @@ function buildDashboardData({
             latestClose: latestMonth.close,
             latestMA: maResult.ma[maResult.ma.length - 1],
         },
-        sellSignals: sellSignalResult.alerts,
+        sellAlert: sellSignalResult.alert,
         sellSignalTriggered: sellSignalResult.triggered,
         bollData: {
             dates: weekKlines.slice(-displayLimit).map((k) => k.date),

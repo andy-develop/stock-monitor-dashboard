@@ -71,52 +71,49 @@ function evaluateSellSignals({ weekKlines, boll, rsi }) {
     const latestClose = weekKlines[latestIndex].close;
     const prevClose = weekKlines[prevIndex].close;
     const latestUpperBoll = boll.upper[latestIndex];
-    const prevUpperBoll = boll.upper[prevIndex];
     const latestRSI = rsi[latestIndex];
     const prevRSI = rsi[prevIndex];
+    const twoWeeksAgoRSI = rsi[weekKlines.length - 3];
 
     // 1. 冲得高：当前或上周收盘价在布林上轨上方
-    const highEnough = latestClose > latestUpperBoll || prevClose > prevUpperBoll;
+    const highEnough = latestClose > latestUpperBoll || prevClose > latestUpperBoll;
 
     // 2. 冲不动了：RSI(6) 曾经 > 70，且当前 RSI 拐头跌破 70
-    //    即当前 RSI < 70，且前 1~2 周内 RSI 曾经 > 70
     const prevRSIHigh = prevRSI > 70;
-    const twoWeeksAgoRSI = rsi[weekKlines.length - 3];
     const twoWeeksAgoHigh = twoWeeksAgoRSI !== null && twoWeeksAgoRSI > 70;
     const rsiTurnedDown = latestRSI < 70 && (prevRSIHigh || twoWeeksAgoHigh);
 
-    const sellTriggered = highEnough && rsiTurnedDown;
+    const triggered = highEnough && rsiTurnedDown;
 
-    const alerts = [
-        {
-            type: highEnough ? 'danger' : 'success',
-            title: highEnough ? '⚠️ 冲得高（BOLL 上轨）' : '✅ 未冲高（BOLL 上轨）',
-            chartKey: 'boll',
-            metrics: [
-                { label: '最新周收盘价', value: latestClose },
-                { label: 'BOLL 上轨', value: latestUpperBoll },
-            ],
-            reason: highEnough
-                ? `当前或上周收盘价已站上 BOLL(20,2) 上轨（${latestUpperBoll}），属于冲高状态。`
-                : `当前收盘价 ${latestClose} 位于 BOLL(20,2) 上轨（${latestUpperBoll}）下方，未出现冲高。`,
-        },
-        {
-            type: rsiTurnedDown ? 'danger' : 'success',
-            title: rsiTurnedDown ? '⚠️ 冲不动了（RSI 拐头）' : '✅ RSI 未拐头',
-            chartKey: 'rsi',
-            metrics: [
-                { label: '最新周 RSI(6)', value: latestRSI },
-                { label: '上周周 RSI(6)', value: prevRSI },
-            ],
-            reason: rsiTurnedDown
-                ? `RSI(6) 此前突破 70 后拐头向下，当前为 ${latestRSI}，动能减弱。`
-                : `RSI(6) 当前为 ${latestRSI}，未出现超买后拐头跌破 70 的信号。`,
-        },
-    ];
+    let type;
+    let title;
+    let reason;
+    if (triggered) {
+        type = 'danger';
+        title = '⚠️ 卖出信号：冲高且动能不足';
+        reason = `当前或上周收盘价已站上 BOLL(20,2) 上轨（${latestUpperBoll}），同时 RSI(6) 从超买区拐头向下，当前为 ${latestRSI}，建议关注卖出机会。`;
+    } else {
+        type = 'success';
+        title = '✅ 暂无卖出信号';
+        reason = `当前收盘价 ${latestClose} 位于 BOLL(20,2) 上轨（${latestUpperBoll}）下方，RSI(6) 为 ${latestRSI}，未同时满足“冲高”与“RSI 拐头”条件。`;
+    }
+
+    const alert = {
+        type,
+        title,
+        chartKeys: ['boll', 'rsi'],
+        metrics: [
+            { label: '最新周收盘价', value: latestClose },
+            { label: 'BOLL 上轨', value: latestUpperBoll },
+            { label: '最新周 RSI(6)', value: latestRSI },
+            { label: '上周周 RSI(6)', value: prevRSI },
+        ],
+        reason,
+    };
 
     return {
-        triggered: sellTriggered,
-        alerts,
+        triggered,
+        alert,
         bollData: { upper: boll.upper, middle: boll.middle, lower: boll.lower },
         rsiData: rsi,
     };
@@ -187,7 +184,7 @@ async function main() {
             alerts,
             sellSignal: {
                 triggered: sellSignalResult.triggered,
-                alerts: sellSignalResult.alerts,
+                alert: sellSignalResult.alert,
             },
         });
 

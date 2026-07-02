@@ -169,7 +169,7 @@
         document.getElementById('stock-subtitle').innerText = `${data.indexName} · 自动化监控`;
         document.getElementById('update-time').innerText = `更新时间：${data.updateTime}`;
 
-        // 渲染 alert 卡片（买入/卖出通用）
+        // 渲染单图表 alert 卡片（买入信号使用）
         function renderAlertCard(alert, container) {
             const card = document.createElement('div');
             card.className = `alert-card alert-${alert.type}`;
@@ -210,8 +210,31 @@
                         </div>
                     </div>
                 `;
-            } else if (alert.chartKey === 'boll') {
-                chartHtml = `
+            }
+
+            card.innerHTML = `<h3>${alert.title}</h3><p>${alert.reason}</p>${metricsHtml}${chartHtml}`;
+            container.appendChild(card);
+        }
+
+        // 渲染多图表 alert 卡片（卖出信号使用）
+        function renderMultiChartAlertCard(alert, container) {
+            const card = document.createElement('div');
+            card.className = `alert-card alert-${alert.type}`;
+
+            let metricsHtml = '';
+            if (alert.metrics && alert.metrics.length > 0) {
+                const items = alert.metrics.map(m => `
+                    <div class="alert-metric">
+                        <div class="label">${m.label}</div>
+                        <div class="value">${m.value}</div>
+                    </div>
+                `).join('');
+                metricsHtml = `<div class="alert-metrics">${items}</div>`;
+            }
+
+            let chartsHtml = '';
+            if (alert.chartKeys && alert.chartKeys.includes('boll')) {
+                chartsHtml += `
                     <div class="chart-box">
                         <div class="chart-header">
                             <h2>周K线及 BOLL(20,2) 趋势图</h2>
@@ -222,8 +245,9 @@
                         </div>
                     </div>
                 `;
-            } else if (alert.chartKey === 'rsi') {
-                chartHtml = `
+            }
+            if (alert.chartKeys && alert.chartKeys.includes('rsi')) {
+                chartsHtml += `
                     <div class="chart-box">
                         <div class="chart-header">
                             <h2>周K线 RSI(6) 趋势图</h2>
@@ -236,7 +260,7 @@
                 `;
             }
 
-            card.innerHTML = `<h3>${alert.title}</h3><p>${alert.reason}</p>${metricsHtml}${chartHtml}`;
+            card.innerHTML = `<h3>${alert.title}</h3><p>${alert.reason}</p>${metricsHtml}${chartsHtml}`;
             container.appendChild(card);
         }
 
@@ -244,10 +268,10 @@
         const buySignalsContainer = document.getElementById('buy-signals-container');
         data.alerts.forEach((alert) => renderAlertCard(alert, buySignalsContainer));
 
-        // 卖出信号模块
+        // 卖出信号模块（合并为一个 alert-card）
         const sellSignalsContainer = document.getElementById('sell-signals-container');
-        if (data.sellSignals && data.sellSignals.length > 0) {
-            data.sellSignals.forEach((alert) => renderAlertCard(alert, sellSignalsContainer));
+        if (data.sellAlert) {
+            renderMultiChartAlertCard(data.sellAlert, sellSignalsContainer);
         } else {
             sellSignalsContainer.innerHTML = '<div class="empty-state">暂无卖出信号</div>';
         }
