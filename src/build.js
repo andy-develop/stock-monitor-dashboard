@@ -384,7 +384,7 @@ async function buildDeejWindow() {
         id: 'deej',
         code: 'SZ000423',
         name: '东阿阿胶',
-        thresholds: { value: 45, pessimistic: 42, iron: 20 },
+        thresholds: { value: 45, pessimistic: 42, iron: 40 },
     });
 }
 
