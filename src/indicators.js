@@ -170,10 +170,89 @@ function calculateRSI(klines, period = 6) {
     return rsi;
 }
 
+
+/**
+ * 计算 N 周期最高价（滚动窗口）
+ * @param {Array<{high: number}>} klines
+ * @param {number} period
+ * @returns {(number|null)[]}
+ */
+function calculatePeriodHigh(klines, period) {
+    if (!Number.isInteger(period) || period <= 0) {
+        throw new Error('周期必须是正整数');
+    }
+    const result = [];
+    for (let i = 0; i < klines.length; i += 1) {
+        if (i < period - 1) {
+            result.push(null);
+            continue;
+        }
+        const highs = klines.slice(i - period + 1, i + 1).map((k) => k.high);
+        result.push(Number(Math.max(...highs).toFixed(3)));
+    }
+    return result;
+}
+
+/**
+ * 计算价格针对 MA 的偏离度
+ * @param {Array<{close: number}>} klines
+ * @param {number} period
+ * @returns {(number|null)[]}
+ */
+function calculatePriceMADeviation(klines, period) {
+    const ma = calculateMA(klines, period);
+    return ma.map((m, i) => {
+        if (m === null || m === 0) return null;
+        return Number(((klines[i].close - m) / m * 100).toFixed(2));
+    });
+}
+
+/**
+ * 计算两条 MA 之间的偏离度
+ * @param {Array<{close: number}>} klines
+ * @param {number} shortPeriod
+ * @param {number} longPeriod
+ * @returns {(number|null)[]}
+ */
+function calculateMADeviation(klines, shortPeriod, longPeriod) {
+    const shortMA = calculateMA(klines, shortPeriod);
+    const longMA = calculateMA(klines, longPeriod);
+    return longMA.map((long, i) => {
+        if (long === null || long === 0) return null;
+        return Number(((shortMA[i] - long) / long * 100).toFixed(2));
+    });
+}
+
+/**
+ * 检测动能衰竭：连续 2 个交易日收盘价下跌且最低价走低
+ * @param {Array<{close: number, low: number}>} klines
+ * @returns {boolean[]}
+ */
+function detectMomentumExhaustion(klines) {
+    const result = [];
+    for (let i = 0; i < klines.length; i += 1) {
+        if (i < 2) {
+            result.push(false);
+            continue;
+        }
+        const today = klines[i];
+        const yesterday = klines[i - 1];
+        const dayBefore = klines[i - 2];
+        const day1Down = yesterday.close < dayBefore.close && yesterday.low < dayBefore.low;
+        const day2Down = today.close < yesterday.close && today.low < yesterday.low;
+        result.push(day1Down && day2Down);
+    }
+    return result;
+}
+
 module.exports = {
     calculateKDJ,
     calculateMA,
     calculateAdaptiveMonthlyMA,
     calculateBOLL,
     calculateRSI,
+    calculatePeriodHigh,
+    calculatePriceMADeviation,
+    calculateMADeviation,
+    detectMomentumExhaustion,
 };

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ETF 自动化监控看板</title>
+    <title>股票监控看板</title>
     <script src="echarts.min.js"></script>
     <style>
         * { box-sizing: border-box; }
@@ -21,7 +21,9 @@
             box-shadow: 0 2px 12px rgba(0,0,0,0.06);
             padding: 24px;
             overflow: hidden;
+            margin-bottom: 24px;
         }
+        .main-panel:last-child { margin-bottom: 0; }
         .header {
             display: flex;
             justify-content: space-between;
@@ -84,7 +86,6 @@
             opacity: 1;
             padding: 16px 20px;
         }
-        .signals-list { padding: 16px 20px; }
         .alert-card {
             padding: 15px 18px;
             border-radius: 6px;
@@ -93,12 +94,14 @@
         }
         .alert-card:last-child { margin-bottom: 0; }
         .alert-danger { background: #fff0f0; border-left-color: #ff4d4f; color: #a61d24; }
+        .alert-warning { background: #fff0f0; border-left-color: #ff7875; color: #a8071a; }
+        .alert-yellow { background: #fffbe6; border-left-color: #fadb14; color: #ad8b00; }
         .alert-success { background: #f6ffed; border-left-color: #52c41a; color: #237804; }
         .alert-card h3 { margin: 0 0 10px 0; font-size: 17px; }
         .alert-card p { margin: 0 0 12px 0; font-size: 14px; line-height: 1.5; }
         .alert-metrics {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
             gap: 10px;
             margin-bottom: 14px;
         }
@@ -109,6 +112,24 @@
         }
         .alert-metric .label { font-size: 12px; opacity: 0.8; margin-bottom: 4px; }
         .alert-metric .value { font-size: 18px; font-weight: 600; }
+        .signal-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+        .signal-detail {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255,255,255,0.65);
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .signal-detail .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+        .signal-detail .dot.on { background: #ff4d4f; }
+        .signal-detail .dot.off { background: #bfbfbf; }
         .chart-box {
             background: rgba(255,255,255,0.55);
             border-radius: 8px;
@@ -153,6 +174,11 @@
             color: #999;
             font-size: 14px;
         }
+        .section-divider {
+            height: 1px;
+            background: #eee;
+            margin: 20px 0;
+        }
         @media (max-width: 768px) {
             body { padding: 10px; }
             .header { flex-direction: column; align-items: flex-start; }
@@ -163,36 +189,7 @@
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="main-panel">
-            <div class="header">
-                <div>
-                    <h1 id="stock-title">加载中...</h1>
-                    <p class="subtitle" id="stock-subtitle">自动监控系统</p>
-                </div>
-                <div class="meta">
-                    <div id="update-time">-</div>
-                    <div id="data-source" style="margin-top: 4px;"></div>
-                </div>
-            </div>
-
-            <div class="signal-card">
-                <h2 class="signal-title" data-target="buy-signals-container">
-                    <span>买入信号</span>
-                    <button class="signal-toggle-btn" type="button" data-target="buy-signals-container">展开</button>
-                </h2>
-                <div class="signals-list collapsed" id="buy-signals-container"></div>
-            </div>
-
-            <div class="signal-card">
-                <h2 class="signal-title" data-target="sell-signals-container">
-                    <span>卖出信号</span>
-                    <button class="signal-toggle-btn" type="button" data-target="sell-signals-container">展开</button>
-                </h2>
-                <div class="signals-list collapsed" id="sell-signals-container"></div>
-            </div>
-        </div>
-    </div>
+    <div class="container" id="dashboard-container"></div>
 
     <script>
         // 数据占位符，由构建脚本注入
@@ -203,137 +200,258 @@
             throw new Error('DASHBOARD_DATA not found');
         }
 
-        const data = window.DASHBOARD_DATA;
+        const windows = window.DASHBOARD_DATA;
+        const container = document.getElementById('dashboard-container');
+        const chartInstances = {};
 
-        // 头部信息
-        document.getElementById('stock-title').innerText = `${data.stockName} (${data.stockCode})`;
-        document.getElementById('stock-subtitle').innerText = `${data.indexName} · 自动化监控`;
-        document.getElementById('update-time').innerText = `更新时间：${data.updateTime}`;
+        function renderAlertMetrics(metrics) {
+            if (!metrics || metrics.length === 0) return '';
+            const items = metrics.map(m => `
+                <div class="alert-metric">
+                    <div class="label">${m.label}</div>
+                    <div class="value">${m.value}</div>
+                </div>
+            `).join('');
+            return `<div class="alert-metrics">${items}</div>`;
+        }
 
-        // 渲染单图表 alert 卡片（买入信号使用）
-        function renderAlertCard(alert, container) {
-            const card = document.createElement('div');
-            card.className = `alert-card alert-${alert.type}`;
+        function renderSignalDetails(details) {
+            if (!details || details.length === 0) return '';
+            const items = details.map(d => `
+                <div class="signal-detail">
+                    <span class="dot ${d.triggered ? 'on' : 'off'}"></span>
+                    <span>${d.label}：${d.value}</span>
+                </div>
+            `).join('');
+            return `<div class="signal-details">${items}</div>`;
+        }
 
-            let metricsHtml = '';
-            if (alert.metrics && alert.metrics.length > 0) {
-                const items = alert.metrics.map(m => `
-                    <div class="alert-metric">
-                        <div class="label">${m.label}</div>
-                        <div class="value">${m.value}</div>
-                    </div>
-                `).join('');
-                metricsHtml = `<div class="alert-metrics">${items}</div>`;
-            }
-
-            let chartHtml = '';
-            if (alert.chartKey === 'week') {
-                chartHtml = `
+        function renderChartsHtml(windowIndex, chartKeys) {
+            if (!chartKeys || chartKeys.length === 0) return '';
+            const chartTitles = {
+                week: '周K线及 KDJ(9,3,3) 联动趋势图',
+                month: '月K线及 MA 趋势图',
+                boll: '周K线及 BOLL(20,2) 趋势图',
+                rsi: '周K线 RSI(6) 趋势图',
+                day: '日K线及 MA5 / MA20 / 10日高点 趋势图',
+            };
+            return chartKeys.map(key => {
+                const panelId = `chart-panel-${windowIndex}-${key}`;
+                const chartId = `chart-${windowIndex}-${key}`;
+                return `
                     <div class="chart-box">
                         <div class="chart-header">
-                            <h2>周K线及 KDJ(9,3,3) 联动趋势图</h2>
-                            <button class="toggle-btn" type="button" data-target="week-chart-panel" data-chart="week">展开</button>
+                            <h2>${chartTitles[key] || key}</h2>
+                            <button class="toggle-btn" type="button" data-target="${panelId}" data-window="${windowIndex}" data-chart="${key}">展开</button>
                         </div>
-                        <div id="week-chart-panel" class="chart-panel collapsed">
-                            <div id="week-chart" class="chart"></div>
+                        <div id="${panelId}" class="chart-panel collapsed">
+                            <div id="${chartId}" class="chart"></div>
                         </div>
                     </div>
                 `;
-            } else if (alert.chartKey === 'month') {
-                chartHtml = `
-                    <div class="chart-box">
-                        <div class="chart-header">
-                            <h2>月K线及 MA 趋势图</h2>
-                            <button class="toggle-btn" type="button" data-target="month-chart-panel" data-chart="month">展开</button>
-                        </div>
-                        <div id="month-chart-panel" class="chart-panel collapsed">
-                            <div id="month-chart" class="chart"></div>
-                        </div>
-                    </div>
-                `;
-            }
-
-            card.innerHTML = `<h3>${alert.title}</h3><p>${alert.reason}</p>${metricsHtml}${chartHtml}`;
-            container.appendChild(card);
+            }).join('');
         }
 
-        // 渲染多图表 alert 卡片（卖出信号使用）
-        function renderMultiChartAlertCard(alert, container) {
-            const card = document.createElement('div');
-            card.className = `alert-card alert-${alert.type}`;
-
-            let metricsHtml = '';
-            if (alert.metrics && alert.metrics.length > 0) {
-                const items = alert.metrics.map(m => `
-                    <div class="alert-metric">
-                        <div class="label">${m.label}</div>
-                        <div class="value">${m.value}</div>
-                    </div>
-                `).join('');
-                metricsHtml = `<div class="alert-metrics">${items}</div>`;
-            }
-
-            let chartsHtml = '';
-            if (alert.chartKeys && alert.chartKeys.includes('boll')) {
-                chartsHtml += `
-                    <div class="chart-box">
-                        <div class="chart-header">
-                            <h2>周K线及 BOLL(20,2) 趋势图</h2>
-                            <button class="toggle-btn" type="button" data-target="boll-chart-panel" data-chart="boll">展开</button>
-                        </div>
-                        <div id="boll-chart-panel" class="chart-panel collapsed">
-                            <div id="boll-chart" class="chart"></div>
-                        </div>
-                    </div>
-                `;
-            }
-            if (alert.chartKeys && alert.chartKeys.includes('rsi')) {
-                chartsHtml += `
-                    <div class="chart-box">
-                        <div class="chart-header">
-                            <h2>周K线 RSI(6) 趋势图</h2>
-                            <button class="toggle-btn" type="button" data-target="rsi-chart-panel" data-chart="rsi">展开</button>
-                        </div>
-                        <div id="rsi-chart-panel" class="chart-panel collapsed">
-                            <div id="rsi-chart" class="chart"></div>
-                        </div>
-                    </div>
-                `;
-            }
-
-            card.innerHTML = `<h3>${alert.title}</h3><p>${alert.reason}</p>${metricsHtml}${chartsHtml}`;
-            container.appendChild(card);
+        function renderAlertCard(alert, windowIndex) {
+            const chartsHtml = renderChartsHtml(windowIndex, alert.chartKeys || []);
+            const detailsHtml = renderSignalDetails(alert.signalDetails);
+            const metricsHtml = renderAlertMetrics(alert.metrics);
+            return `
+                <div class="alert-card alert-${alert.type}">
+                    <h3>${alert.title}</h3>
+                    <p>${alert.reason}</p>
+                    ${metricsHtml}
+                    ${detailsHtml}
+                    ${chartsHtml}
+                </div>
+            `;
         }
 
-        // 买入信号模块
-        const buySignalsContainer = document.getElementById('buy-signals-container');
-        data.alerts.forEach((alert) => renderAlertCard(alert, buySignalsContainer));
+        function renderWindow(windowData, index) {
+            const panel = document.createElement('div');
+            panel.className = 'main-panel';
+            panel.innerHTML = `
+                <div class="header">
+                    <div>
+                        <h1>${windowData.stockName} (${windowData.stockCode})</h1>
+                        <p class="subtitle">${windowData.indexName} · 自动化监控</p>
+                    </div>
+                    <div class="meta">
+                        <div>更新时间：${windowData.updateTime}</div>
+                    </div>
+                </div>
 
-        // 卖出信号模块（合并为一个 alert-card）
-        const sellSignalsContainer = document.getElementById('sell-signals-container');
-        if (data.sellAlert) {
-            renderMultiChartAlertCard(data.sellAlert, sellSignalsContainer);
-        } else {
-            sellSignalsContainer.innerHTML = '<div class="empty-state">暂无卖出信号</div>';
+                <div class="signal-card">
+                    <h2 class="signal-title" data-target="buy-list-${index}">
+                        <span>${windowData.buySectionTitle}</span>
+                        <button class="signal-toggle-btn" type="button" data-target="buy-list-${index}">展开</button>
+                    </h2>
+                    <div class="signals-list collapsed" id="buy-list-${index}">
+                        ${windowData.buyAlerts.map(a => renderAlertCard(a, index)).join('')}
+                    </div>
+                </div>
+
+                <div class="signal-card">
+                    <h2 class="signal-title" data-target="sell-list-${index}">
+                        <span>${windowData.sellSectionTitle}</span>
+                        <button class="signal-toggle-btn" type="button" data-target="sell-list-${index}">展开</button>
+                    </h2>
+                    <div class="signals-list collapsed" id="sell-list-${index}">
+                        ${windowData.sellAlert ? renderAlertCard(windowData.sellAlert, index) : '<div class="empty-state">暂无信号</div>'}
+                    </div>
+                </div>
+            `;
+            container.appendChild(panel);
+
+            // 标题颜色联动
+            ['buy-list', 'sell-list'].forEach(kind => {
+                const list = document.getElementById(`${kind}-${index}`);
+                const title = document.querySelector(`.signal-title[data-target="${kind}-${index}"]`);
+                const hasDanger = list.querySelector('.alert-danger') !== null
+                    || list.querySelector('.alert-warning') !== null;
+                if (hasDanger) {
+                    title.classList.add('danger');
+                }
+            });
         }
 
-        // 根据子模块 alert 类型设置大标题栏颜色
-        function updateSignalTitleColor(containerId) {
-            const container = document.getElementById(containerId);
-            const title = document.querySelector(`.signal-title[data-target="${containerId}"]`);
-            const hasDanger = container.querySelector('.alert-danger') !== null;
-            if (hasDanger) {
-                title.classList.add('danger');
+        windows.forEach((w, i) => renderWindow(w, i));
+
+        // 图表初始化函数
+        function initEtfWeekChart(windowIndex, data) {
+            const chart = echarts.init(document.getElementById(`chart-${windowIndex}-week`));
+            chart.setOption({
+                grid: [
+                    { left: '8%', right: '4%', top: '10%', height: '45%' },
+                    { left: '8%', right: '4%', top: '62%', height: '28%' }
+                ],
+                tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                legend: { data: ['周K线', 'K', 'D', 'J'], top: 0 },
+                xAxis: [
+                    { type: 'category', data: data.weekData.dates, gridIndex: 0 },
+                    { type: 'category', data: data.weekData.dates, gridIndex: 1 }
+                ],
+                yAxis: [
+                    { scale: true, splitArea: { show: true }, gridIndex: 0 },
+                    { min: 0, max: 100, gridIndex: 1 }
+                ],
+                dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], start: 50, end: 100 }],
+                series: [
+                    {
+                        name: '周K线', type: 'candlestick', data: data.weekData.candlestick,
+                        xAxisIndex: 0, yAxisIndex: 0,
+                        itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' }
+                    },
+                    { name: 'K', type: 'line', data: data.weekData.k, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, itemStyle: { color: '#e0a926' } },
+                    { name: 'D', type: 'line', data: data.weekData.d, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, itemStyle: { color: '#3277c9' } },
+                    { name: 'J', type: 'line', data: data.weekData.j, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, itemStyle: { color: '#c437a3' } }
+                ]
+            });
+            return chart;
+        }
+
+        function initEtfMonthChart(windowIndex, data) {
+            const chart = echarts.init(document.getElementById(`chart-${windowIndex}-month`));
+            const series = [
+                { name: '收盘价', type: 'line', data: data.monthData.closes, showSymbol: false, itemStyle: { color: '#3277c9' }, areaStyle: { opacity: 0.1 } }
+            ];
+            const legend = ['收盘价'];
+            if (data.monthData.maPeriod) {
+                series.push({ name: `MA${data.monthData.maPeriod}`, type: 'line', data: data.monthData.ma, showSymbol: false, itemStyle: { color: '#e0a926' } });
+                legend.push(`MA${data.monthData.maPeriod}`);
             }
+            chart.setOption({
+                tooltip: { trigger: 'axis' },
+                legend: { data: legend, top: 0 },
+                xAxis: { type: 'category', data: data.monthData.dates },
+                yAxis: { scale: true, splitArea: { show: true } },
+                dataZoom: [{ type: 'inside', start: 0, end: 100 }],
+                series
+            });
+            return chart;
         }
 
-        updateSignalTitleColor('buy-signals-container');
-        updateSignalTitleColor('sell-signals-container');
+        function initEtfBollChart(windowIndex, data) {
+            const chart = echarts.init(document.getElementById(`chart-${windowIndex}-boll`));
+            chart.setOption({
+                tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                legend: { data: ['周K线', 'BOLL 上轨', 'BOLL 中轨', 'BOLL 下轨'], top: 0 },
+                xAxis: { type: 'category', data: data.bollData.dates },
+                yAxis: { scale: true, splitArea: { show: true } },
+                dataZoom: [{ type: 'inside', start: 50, end: 100 }],
+                series: [
+                    {
+                        name: '周K线', type: 'candlestick', data: data.bollData.candlestick,
+                        itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' }
+                    },
+                    { name: 'BOLL 上轨', type: 'line', data: data.bollData.upper, showSymbol: false, itemStyle: { color: '#ff9800' }, lineStyle: { type: 'dashed' } },
+                    { name: 'BOLL 中轨', type: 'line', data: data.bollData.middle, showSymbol: false, itemStyle: { color: '#9e9e9e' } },
+                    { name: 'BOLL 下轨', type: 'line', data: data.bollData.lower, showSymbol: false, itemStyle: { color: '#00bcd4' }, lineStyle: { type: 'dashed' } }
+                ]
+            });
+            return chart;
+        }
 
-        // 大信号卡片折叠/展开交互
+        function initEtfRsiChart(windowIndex, data) {
+            const chart = echarts.init(document.getElementById(`chart-${windowIndex}-rsi`));
+            chart.setOption({
+                tooltip: { trigger: 'axis' },
+                legend: { data: ['RSI(6)'], top: 0 },
+                xAxis: { type: 'category', data: data.rsiData.dates },
+                yAxis: { min: 0, max: 100, splitArea: { show: true } },
+                dataZoom: [{ type: 'inside', start: 50, end: 100 }],
+                series: [
+                    {
+                        name: 'RSI(6)', type: 'line', data: data.rsiData.values, showSymbol: false,
+                        itemStyle: { color: '#9c27b0' }, areaStyle: { opacity: 0.1 },
+                        markLine: {
+                            silent: true, symbol: 'none',
+                            data: [{ yAxis: 70, lineStyle: { color: '#ff9800', type: 'dashed' }, label: { formatter: '70' } }]
+                        }
+                    }
+                ]
+            });
+            return chart;
+        }
+
+        function initGreeDayChart(windowIndex, data) {
+            const chart = echarts.init(document.getElementById(`chart-${windowIndex}-day`));
+            chart.setOption({
+                tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                legend: { data: ['日K线', 'MA5', 'MA20', '10日高点'], top: 0 },
+                xAxis: { type: 'category', data: data.dayData.dates },
+                yAxis: { scale: true, splitArea: { show: true } },
+                dataZoom: [{ type: 'inside', start: 60, end: 100 }],
+                series: [
+                    {
+                        name: '日K线', type: 'candlestick', data: data.dayData.candlestick,
+                        itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' }
+                    },
+                    { name: 'MA5', type: 'line', data: data.dayData.ma5, showSymbol: false, itemStyle: { color: '#e0a926' } },
+                    { name: 'MA20', type: 'line', data: data.dayData.ma20, showSymbol: false, itemStyle: { color: '#3277c9' } },
+                    { name: '10日高点', type: 'line', data: data.dayData.periodHigh10, showSymbol: false, itemStyle: { color: '#ff5722' }, lineStyle: { type: 'dashed' } }
+                ]
+            });
+            return chart;
+        }
+
+        function initChart(windowIndex, chartKey) {
+            const key = `${windowIndex}-${chartKey}`;
+            if (chartInstances[key]) return chartInstances[key];
+            const data = windows[windowIndex];
+            let chart;
+            if (chartKey === 'week') chart = initEtfWeekChart(windowIndex, data);
+            else if (chartKey === 'month') chart = initEtfMonthChart(windowIndex, data);
+            else if (chartKey === 'boll') chart = initEtfBollChart(windowIndex, data);
+            else if (chartKey === 'rsi') chart = initEtfRsiChart(windowIndex, data);
+            else if (chartKey === 'day') chart = initGreeDayChart(windowIndex, data);
+            if (chart) chartInstances[key] = chart;
+            return chart;
+        }
+
+        // 大卡片折叠/展开交互
         document.querySelectorAll('.signal-title, .signal-toggle-btn').forEach(el => {
             el.addEventListener('click', (e) => {
-                // 如果点击的是展开按钮，避免触发标题点击导致两次切换
                 if (e.target.classList.contains('signal-toggle-btn')) {
                     e.stopPropagation();
                 }
@@ -354,145 +472,11 @@
             });
         });
 
-        // 图表懒初始化
-        const chartInstances = {};
-
-        function initWeekChart() {
-            if (chartInstances.week) return chartInstances.week;
-            const weekChart = echarts.init(document.getElementById('week-chart'));
-            weekChart.setOption({
-                grid: [
-                    { left: '8%', right: '4%', top: '10%', height: '45%' },
-                    { left: '8%', right: '4%', top: '62%', height: '28%' }
-                ],
-                tooltip: {
-                    trigger: 'axis',
-                    axisPointer: { type: 'cross' }
-                },
-                legend: { data: ['周K线', 'K', 'D', 'J'], top: 0 },
-                xAxis: [
-                    { type: 'category', data: data.weekData.dates, gridIndex: 0, axisLine: { onZero: false } },
-                    { type: 'category', data: data.weekData.dates, gridIndex: 1 }
-                ],
-                yAxis: [
-                    { scale: true, splitArea: { show: true }, gridIndex: 0 },
-                    { min: 0, max: 100, gridIndex: 1 }
-                ],
-                dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], start: 50, end: 100 }],
-                series: [
-                    {
-                        name: '周K线',
-                        type: 'candlestick',
-                        data: data.weekData.candlestick,
-                        xAxisIndex: 0,
-                        yAxisIndex: 0,
-                        itemStyle: {
-                            color: '#ef5350',
-                            color0: '#26a69a',
-                            borderColor: '#ef5350',
-                            borderColor0: '#26a69a'
-                        }
-                    },
-                    { name: 'K', type: 'line', data: data.weekData.k, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, itemStyle: { color: '#e0a926' } },
-                    { name: 'D', type: 'line', data: data.weekData.d, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, itemStyle: { color: '#3277c9' } },
-                    { name: 'J', type: 'line', data: data.weekData.j, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, itemStyle: { color: '#c437a3' } }
-                ]
-            });
-            chartInstances.week = weekChart;
-            return weekChart;
-        }
-
-        function initMonthChart() {
-            if (chartInstances.month) return chartInstances.month;
-            const monthChart = echarts.init(document.getElementById('month-chart'));
-            const monthOption = {
-                tooltip: { trigger: 'axis' },
-                legend: { data: ['收盘价', 'MA'], top: 0 },
-                xAxis: { type: 'category', data: data.monthData.dates },
-                yAxis: { scale: true, splitArea: { show: true } },
-                dataZoom: [{ type: 'inside', start: 0, end: 100 }],
-                series: [
-                    { name: '收盘价', type: 'line', data: data.monthData.closes, showSymbol: false, itemStyle: { color: '#3277c9' }, areaStyle: { opacity: 0.1 } }
-                ]
-            };
-            if (data.monthData.maPeriod) {
-                monthOption.series.push({
-                    name: `MA${data.monthData.maPeriod}`,
-                    type: 'line',
-                    data: data.monthData.ma,
-                    showSymbol: false,
-                    itemStyle: { color: '#e0a926' }
-                });
-                monthOption.legend.data.push(`MA${data.monthData.maPeriod}`);
-            }
-            monthChart.setOption(monthOption);
-            chartInstances.month = monthChart;
-            return monthChart;
-        }
-
-        function initBollChart() {
-            if (chartInstances.boll) return chartInstances.boll;
-            const bollChart = echarts.init(document.getElementById('boll-chart'));
-            bollChart.setOption({
-                tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-                legend: { data: ['周K线', 'BOLL 上轨', 'BOLL 中轨', 'BOLL 下轨'], top: 0 },
-                xAxis: { type: 'category', data: data.bollData.dates, axisLine: { onZero: false } },
-                yAxis: { scale: true, splitArea: { show: true } },
-                dataZoom: [{ type: 'inside', start: 50, end: 100 }],
-                series: [
-                    {
-                        name: '周K线',
-                        type: 'candlestick',
-                        data: data.bollData.candlestick,
-                        itemStyle: {
-                            color: '#ef5350',
-                            color0: '#26a69a',
-                            borderColor: '#ef5350',
-                            borderColor0: '#26a69a'
-                        }
-                    },
-                    { name: 'BOLL 上轨', type: 'line', data: data.bollData.upper, showSymbol: false, itemStyle: { color: '#ff9800' }, lineStyle: { type: 'dashed' } },
-                    { name: 'BOLL 中轨', type: 'line', data: data.bollData.middle, showSymbol: false, itemStyle: { color: '#9e9e9e' } },
-                    { name: 'BOLL 下轨', type: 'line', data: data.bollData.lower, showSymbol: false, itemStyle: { color: '#00bcd4' }, lineStyle: { type: 'dashed' } }
-                ]
-            });
-            chartInstances.boll = bollChart;
-            return bollChart;
-        }
-
-        function initRsiChart() {
-            if (chartInstances.rsi) return chartInstances.rsi;
-            const rsiChart = echarts.init(document.getElementById('rsi-chart'));
-            rsiChart.setOption({
-                tooltip: { trigger: 'axis' },
-                legend: { data: ['RSI(6)'], top: 0 },
-                xAxis: { type: 'category', data: data.rsiData.dates },
-                yAxis: { min: 0, max: 100, splitArea: { show: true } },
-                dataZoom: [{ type: 'inside', start: 50, end: 100 }],
-                series: [
-                    {
-                        name: 'RSI(6)',
-                        type: 'line',
-                        data: data.rsiData.values,
-                        showSymbol: false,
-                        itemStyle: { color: '#9c27b0' },
-                        areaStyle: { opacity: 0.1 },
-                        markLine: {
-                            silent: true,
-                            symbol: 'none',
-                            data: [{ yAxis: 70, lineStyle: { color: '#ff9800', type: 'dashed' }, label: { formatter: '70' } }]
-                        }
-                    }
-                ]
-            });
-            chartInstances.rsi = rsiChart;
-            return rsiChart;
-        }
-
-        // 折叠/展开交互
+        // 图表折叠/展开交互
         document.querySelectorAll('.toggle-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const targetId = btn.getAttribute('data-target');
+                const windowIndex = btn.getAttribute('data-window');
                 const chartKey = btn.getAttribute('data-chart');
                 const panel = document.getElementById(targetId);
                 const isCollapsed = panel.classList.contains('collapsed');
@@ -501,21 +485,9 @@
                     panel.classList.remove('collapsed');
                     panel.classList.add('expanded');
                     btn.innerText = '收起';
-
                     requestAnimationFrame(() => {
-                        if (chartKey === 'week') {
-                            const chart = initWeekChart();
-                            chart.resize();
-                        } else if (chartKey === 'month') {
-                            const chart = initMonthChart();
-                            chart.resize();
-                        } else if (chartKey === 'boll') {
-                            const chart = initBollChart();
-                            chart.resize();
-                        } else if (chartKey === 'rsi') {
-                            const chart = initRsiChart();
-                            chart.resize();
-                        }
+                        const chart = initChart(windowIndex, chartKey);
+                        if (chart) chart.resize();
                     });
                 } else {
                     panel.classList.remove('expanded');
