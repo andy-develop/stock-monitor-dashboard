@@ -122,42 +122,43 @@ function evaluateEtfSellSignals({ weekKlines, boll, rsi }) {
 }
 
 /**
- * 格力电器：买入机会（三阶段底部监控）
+ * 消费类股票：买入机会（三阶段底部监控）
  */
-function evaluateGreeBuyOpportunities({ latestClose }) {
+function evaluateConsumerBuyOpportunities({ latestClose, thresholds, valueHint }) {
+    const { value: valueThreshold, pessimistic: pessimisticThreshold, iron: ironThreshold } = thresholds;
     const alerts = [];
 
-    // 历史铁底 < 30：大红
-    const ironBottom = latestClose < 30;
+    // 历史铁底：大红
+    const ironBottom = latestClose < ironThreshold;
     alerts.push({
         type: ironBottom ? 'danger' : 'success',
         title: ironBottom ? '🔴 历史铁底' : '✅ 未触及历史铁底',
-        metrics: [{ label: '当前股价', value: latestClose }, { label: '历史铁底阈值', value: 30 }],
+        metrics: [{ label: '当前股价', value: latestClose }, { label: '历史铁底阈值', value: ironThreshold }],
         reason: ironBottom
-            ? `当前股价 ${latestClose} 已跌破历史铁底 30 元，处于极端低估区域。`
-            : `当前股价 ${latestClose} 高于历史铁底 30 元。`,
+            ? `当前股价 ${latestClose} 已跌破历史铁底 ${ironThreshold} 元，处于极端低估区域。`
+            : `当前股价 ${latestClose} 高于历史铁底 ${ironThreshold} 元。`,
     });
 
-    // 悲观情绪底 < 32：浅红（但未跌破 30 时）
-    const pessimisticBottom = latestClose < 32;
+    // 悲观情绪底：浅红
+    const pessimisticBottom = latestClose < pessimisticThreshold;
     alerts.push({
         type: pessimisticBottom ? 'warning' : 'success',
         title: pessimisticBottom ? '🟠 悲观情绪底' : '✅ 未触及悲观情绪底',
-        metrics: [{ label: '当前股价', value: latestClose }, { label: '悲观情绪底阈值', value: 32 }],
+        metrics: [{ label: '当前股价', value: latestClose }, { label: '悲观情绪底阈值', value: pessimisticThreshold }],
         reason: pessimisticBottom
-            ? `当前股价 ${latestClose} 已跌破悲观情绪底 32 元，市场情绪偏悲观。`
-            : `当前股价 ${latestClose} 高于悲观情绪底 32 元。`,
+            ? `当前股价 ${latestClose} 已跌破悲观情绪底 ${pessimisticThreshold} 元，市场情绪偏悲观。`
+            : `当前股价 ${latestClose} 高于悲观情绪底 ${pessimisticThreshold} 元。`,
     });
 
-    // 价值底 < 36：黄
-    const valueBottom = latestClose < 36;
+    // 价值底：黄
+    const valueBottom = latestClose < valueThreshold;
     alerts.push({
         type: valueBottom ? 'yellow' : 'success',
         title: valueBottom ? '🟡 价值底' : '✅ 未触及价值底',
-        metrics: [{ label: '当前股价', value: latestClose }, { label: '价值底阈值', value: 36 }],
+        metrics: [{ label: '当前股价', value: latestClose }, { label: '价值底阈值', value: valueThreshold }],
         reason: valueBottom
-            ? `当前股价 ${latestClose} 已跌破价值底 36 元，低于管理层认可的价值中枢 38.61 元。`
-            : `当前股价 ${latestClose} 高于价值底 36 元，管理层认可的价值中枢为 38.61 元。`,
+            ? `当前股价 ${latestClose} 已跌破价值底 ${valueThreshold} 元${valueHint ? `，${valueHint}` : ''}。`
+            : `当前股价 ${latestClose} 高于价值底 ${valueThreshold} 元${valueHint ? `，${valueHint}` : ''}。`,
     });
 
     return alerts;
@@ -166,7 +167,7 @@ function evaluateGreeBuyOpportunities({ latestClose }) {
 /**
  * 格力电器：卖出机会（三个信号）
  */
-function evaluateGreeSellSignals({ dayKlines, ma5, ma20 }) {
+function evaluateConsumerSellSignals({ dayKlines, ma5, ma20 }) {
     const latestIndex = dayKlines.length - 1;
     const latestClose = dayKlines[latestIndex].close;
 
@@ -322,9 +323,7 @@ async function buildEtfWindow() {
     };
 }
 
-async function buildGreeWindow() {
-    const code = 'SZ000651';
-    const name = '格力电器';
+async function buildConsumerWindow({ id, code, name, thresholds, valueHint, hint }) {
     const indexName = '消费类股票';
 
     console.log(`开始获取 ${name} (${code}) 数据...`);
@@ -336,15 +335,19 @@ async function buildGreeWindow() {
     const ma5 = calculateMA(dayKlines, 5);
     const ma20 = calculateMA(dayKlines, 20);
 
-    const buyAlerts = evaluateGreeBuyOpportunities({ latestClose: dayKlines[dayKlines.length - 1].close });
-    const sellSignalResult = evaluateGreeSellSignals({ dayKlines, ma5, ma20 });
+    const buyAlerts = evaluateConsumerBuyOpportunities({
+        latestClose: dayKlines[dayKlines.length - 1].close,
+        thresholds,
+        valueHint,
+    });
+    const sellSignalResult = evaluateConsumerSellSignals({ dayKlines, ma5, ma20 });
 
     return {
-        id: 'gree',
+        id,
         stockName: name,
         stockCode: code,
         indexName,
-        hint: '提示：2026.06.17 管理层认可价值中枢是 38.61 元',
+        hint,
         updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
         buySectionTitle: '买入机会',
         sellSectionTitle: '卖出机会',
@@ -354,12 +357,33 @@ async function buildGreeWindow() {
     };
 }
 
+async function buildGreeWindow() {
+    return buildConsumerWindow({
+        id: 'gree',
+        code: 'SZ000651',
+        name: '格力电器',
+        thresholds: { value: 36, pessimistic: 32, iron: 30 },
+        valueHint: '管理层认可的价值中枢为 38.61 元',
+        hint: '提示：2026.06.17 管理层认可价值中枢是 38.61 元',
+    });
+}
+
+async function buildShuanghuiWindow() {
+    return buildConsumerWindow({
+        id: 'shuanghui',
+        code: 'SZ000895',
+        name: '双汇发展',
+        thresholds: { value: 23, pessimistic: 22, iron: 20 },
+    });
+}
+
 async function main() {
     try {
         const etfWindow = await buildEtfWindow();
         const greeWindow = await buildGreeWindow();
+        const shuanghuiWindow = await buildShuanghuiWindow();
 
-        const dashboardData = [etfWindow, greeWindow];
+        const dashboardData = [etfWindow, greeWindow, shuanghuiWindow];
 
         renderHtml(dashboardData, DIST_DIR);
         copyEcharts();
@@ -369,6 +393,7 @@ async function main() {
             windows: [
                 { id: etfWindow.id, stockCode: etfWindow.stockCode, alerts: etfWindow.buyAlerts, sellAlert: etfWindow.sellAlert },
                 { id: greeWindow.id, stockCode: greeWindow.stockCode, buyAlerts: greeWindow.buyAlerts, sellAlert: greeWindow.sellAlert },
+                { id: shuanghuiWindow.id, stockCode: shuanghuiWindow.stockCode, buyAlerts: shuanghuiWindow.buyAlerts, sellAlert: shuanghuiWindow.sellAlert },
             ],
         });
 
