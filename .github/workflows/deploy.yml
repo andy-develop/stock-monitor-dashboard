@@ -2,8 +2,9 @@ name: Deploy Stock Monitor Dashboard
 
 on:
   schedule:
-    # 工作日（周一到周五）UTC 08:00 执行，对应北京时间 16:00
-    - cron: '0 8 * * 1-5'
+    # 工作日（周一到周五）北京时间 10:00 和 12:00 执行
+    # 对应 UTC 02:00 和 04:00
+    - cron: '0 2,4 * * 1-5'
   workflow_dispatch:
     inputs:
       reason:
