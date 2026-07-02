@@ -15,15 +15,20 @@
             padding: 20px;
         }
         .container { max-width: 1200px; margin: 0 auto; }
+        .main-panel {
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            padding: 24px;
+            overflow: hidden;
+        }
         .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            margin-bottom: 20px;
+            padding-bottom: 18px;
+            margin-bottom: 18px;
+            border-bottom: 1px solid #eee;
             flex-wrap: wrap;
             gap: 10px;
         }
@@ -31,12 +36,12 @@
         .header .subtitle { margin: 5px 0 0 0; color: #666; font-size: 14px; }
         .header .meta { text-align: right; color: #888; font-size: 13px; }
         .signal-card {
-            background: #fff;
+            border: 1px solid #eee;
             border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
             margin-bottom: 20px;
             overflow: hidden;
         }
+        .signal-card:last-child { margin-bottom: 0; }
         .signal-title {
             margin: 0;
             padding: 16px 20px;
@@ -124,26 +129,28 @@
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <div>
-                <h1 id="stock-title">加载中...</h1>
-                <p class="subtitle" id="stock-subtitle">自动监控系统</p>
+        <div class="main-panel">
+            <div class="header">
+                <div>
+                    <h1 id="stock-title">加载中...</h1>
+                    <p class="subtitle" id="stock-subtitle">自动监控系统</p>
+                </div>
+                <div class="meta">
+                    <div id="update-time">-</div>
+                    <div id="data-source" style="margin-top: 4px;"></div>
+                </div>
             </div>
-            <div class="meta">
-                <div id="update-time">-</div>
-                <div id="data-source" style="margin-top: 4px;"></div>
+
+            <div class="signal-card">
+                <h2 class="signal-title">买入信号</h2>
+                <div class="signals-list" id="buy-signals-container"></div>
             </div>
-        </div>
 
-        <div class="signal-card">
-            <h2 class="signal-title">买入信号</h2>
-            <div class="signals-list" id="buy-signals-container"></div>
-        </div>
-
-        <div class="signal-card">
-            <h2 class="signal-title">卖出信号</h2>
-            <div class="signals-list">
-                <div class="empty-state">暂无卖出信号</div>
+            <div class="signal-card">
+                <h2 class="signal-title">卖出信号</h2>
+                <div class="signals-list">
+                    <div class="empty-state">暂无卖出信号</div>
+                </div>
             </div>
         </div>
     </div>
