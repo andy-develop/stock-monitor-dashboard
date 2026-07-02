@@ -344,6 +344,7 @@ async function buildGreeWindow() {
         stockName: name,
         stockCode: code,
         indexName,
+        hint: '提示：2026.06.17 管理层认可价值中枢是 38.61 元',
         updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
         buySectionTitle: '买入机会',
         sellSectionTitle: '卖出机会',
