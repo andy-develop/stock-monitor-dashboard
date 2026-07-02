@@ -148,9 +148,7 @@
 
             <div class="signal-card">
                 <h2 class="signal-title">卖出信号</h2>
-                <div class="signals-list">
-                    <div class="empty-state">暂无卖出信号</div>
-                </div>
+                <div class="signals-list" id="sell-signals-container"></div>
             </div>
         </div>
     </div>
@@ -171,10 +169,8 @@
         document.getElementById('stock-subtitle').innerText = `${data.indexName} · 自动化监控`;
         document.getElementById('update-time').innerText = `更新时间：${data.updateTime}`;
 
-        // 买入信号模块（包含周K线和月K线两个 alert）
-        const buySignalsContainer = document.getElementById('buy-signals-container');
-
-        data.alerts.forEach((alert) => {
+        // 渲染 alert 卡片（买入/卖出通用）
+        function renderAlertCard(alert, container) {
             const card = document.createElement('div');
             card.className = `alert-card alert-${alert.type}`;
 
@@ -214,11 +210,47 @@
                         </div>
                     </div>
                 `;
+            } else if (alert.chartKey === 'boll') {
+                chartHtml = `
+                    <div class="chart-box">
+                        <div class="chart-header">
+                            <h2>周K线及 BOLL(20,2) 趋势图</h2>
+                            <button class="toggle-btn" type="button" data-target="boll-chart-panel" data-chart="boll">展开</button>
+                        </div>
+                        <div id="boll-chart-panel" class="chart-panel collapsed">
+                            <div id="boll-chart" class="chart"></div>
+                        </div>
+                    </div>
+                `;
+            } else if (alert.chartKey === 'rsi') {
+                chartHtml = `
+                    <div class="chart-box">
+                        <div class="chart-header">
+                            <h2>周K线 RSI(6) 趋势图</h2>
+                            <button class="toggle-btn" type="button" data-target="rsi-chart-panel" data-chart="rsi">展开</button>
+                        </div>
+                        <div id="rsi-chart-panel" class="chart-panel collapsed">
+                            <div id="rsi-chart" class="chart"></div>
+                        </div>
+                    </div>
+                `;
             }
 
             card.innerHTML = `<h3>${alert.title}</h3><p>${alert.reason}</p>${metricsHtml}${chartHtml}`;
-            buySignalsContainer.appendChild(card);
-        });
+            container.appendChild(card);
+        }
+
+        // 买入信号模块
+        const buySignalsContainer = document.getElementById('buy-signals-container');
+        data.alerts.forEach((alert) => renderAlertCard(alert, buySignalsContainer));
+
+        // 卖出信号模块
+        const sellSignalsContainer = document.getElementById('sell-signals-container');
+        if (data.sellSignals && data.sellSignals.length > 0) {
+            data.sellSignals.forEach((alert) => renderAlertCard(alert, sellSignalsContainer));
+        } else {
+            sellSignalsContainer.innerHTML = '<div class="empty-state">暂无卖出信号</div>';
+        }
 
         // 图表懒初始化
         const chartInstances = {};
@@ -296,6 +328,65 @@
             return monthChart;
         }
 
+        function initBollChart() {
+            if (chartInstances.boll) return chartInstances.boll;
+            const bollChart = echarts.init(document.getElementById('boll-chart'));
+            bollChart.setOption({
+                tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                legend: { data: ['周K线', 'BOLL 上轨', 'BOLL 中轨', 'BOLL 下轨'], top: 0 },
+                xAxis: { type: 'category', data: data.bollData.dates, axisLine: { onZero: false } },
+                yAxis: { scale: true, splitArea: { show: true } },
+                dataZoom: [{ type: 'inside', start: 50, end: 100 }],
+                series: [
+                    {
+                        name: '周K线',
+                        type: 'candlestick',
+                        data: data.bollData.candlestick,
+                        itemStyle: {
+                            color: '#ef5350',
+                            color0: '#26a69a',
+                            borderColor: '#ef5350',
+                            borderColor0: '#26a69a'
+                        }
+                    },
+                    { name: 'BOLL 上轨', type: 'line', data: data.bollData.upper, showSymbol: false, itemStyle: { color: '#ff9800' }, lineStyle: { type: 'dashed' } },
+                    { name: 'BOLL 中轨', type: 'line', data: data.bollData.middle, showSymbol: false, itemStyle: { color: '#9e9e9e' } },
+                    { name: 'BOLL 下轨', type: 'line', data: data.bollData.lower, showSymbol: false, itemStyle: { color: '#00bcd4' }, lineStyle: { type: 'dashed' } }
+                ]
+            });
+            chartInstances.boll = bollChart;
+            return bollChart;
+        }
+
+        function initRsiChart() {
+            if (chartInstances.rsi) return chartInstances.rsi;
+            const rsiChart = echarts.init(document.getElementById('rsi-chart'));
+            rsiChart.setOption({
+                tooltip: { trigger: 'axis' },
+                legend: { data: ['RSI(6)'], top: 0 },
+                xAxis: { type: 'category', data: data.rsiData.dates },
+                yAxis: { min: 0, max: 100, splitArea: { show: true } },
+                dataZoom: [{ type: 'inside', start: 50, end: 100 }],
+                series: [
+                    {
+                        name: 'RSI(6)',
+                        type: 'line',
+                        data: data.rsiData.values,
+                        showSymbol: false,
+                        itemStyle: { color: '#9c27b0' },
+                        areaStyle: { opacity: 0.1 },
+                        markLine: {
+                            silent: true,
+                            symbol: 'none',
+                            data: [{ yAxis: 70, lineStyle: { color: '#ff9800', type: 'dashed' }, label: { formatter: '70' } }]
+                        }
+                    }
+                ]
+            });
+            chartInstances.rsi = rsiChart;
+            return rsiChart;
+        }
+
         // 折叠/展开交互
         document.querySelectorAll('.toggle-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -315,6 +406,12 @@
                             chart.resize();
                         } else if (chartKey === 'month') {
                             const chart = initMonthChart();
+                            chart.resize();
+                        } else if (chartKey === 'boll') {
+                            const chart = initBollChart();
+                            chart.resize();
+                        } else if (chartKey === 'rsi') {
+                            const chart = initRsiChart();
                             chart.resize();
                         }
                     });

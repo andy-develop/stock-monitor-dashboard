@@ -87,8 +87,93 @@ function calculateAdaptiveMonthlyMA(monthKlines) {
     return { period, ma: calculateMA(monthKlines, period) };
 }
 
+
+/**
+ * 计算 BOLL(20,2)
+ * @param {Array<{close: number}>} klines
+ * @returns {{upper: (number|null)[], middle: (number|null)[], lower: (number|null)[]}}
+ */
+function calculateBOLL(klines, period = 20, multiplier = 2) {
+    if (!Number.isInteger(period) || period <= 0) {
+        throw new Error('BOLL 周期必须是正整数');
+    }
+
+    const ma = calculateMA(klines, period);
+    const upper = [];
+    const lower = [];
+
+    for (let i = 0; i < klines.length; i += 1) {
+        if (i < period - 1) {
+            upper.push(null);
+            lower.push(null);
+            continue;
+        }
+
+        const slice = klines.slice(i - period + 1, i + 1).map((k) => k.close);
+        const mean = ma[i];
+        const variance = slice.reduce((sum, val) => sum + (val - mean) ** 2, 0) / period;
+        const std = Math.sqrt(variance);
+
+        upper.push(Number((mean + multiplier * std).toFixed(3)));
+        lower.push(Number((mean - multiplier * std).toFixed(3)));
+    }
+
+    return { upper, middle: ma, lower };
+}
+
+/**
+ * 计算 RSI(period)
+ * @param {Array<{close: number}>} klines
+ * @param {number} period
+ * @returns {(number|null)[]}
+ */
+function calculateRSI(klines, period = 6) {
+    if (!Number.isInteger(period) || period <= 0) {
+        throw new Error('RSI 周期必须是正整数');
+    }
+    if (klines.length < period + 1) {
+        throw new Error(`RSI 计算需要至少 ${period + 1} 条 K 线`);
+    }
+
+    const rsi = [];
+    let avgGain = 0;
+    let avgLoss = 0;
+
+    // 第一个有效 RSI 基于前 period 个涨跌幅的简单平均
+    for (let i = 1; i <= period; i += 1) {
+        const change = klines[i].close - klines[i - 1].close;
+        avgGain += Math.max(change, 0);
+        avgLoss += Math.abs(Math.min(change, 0));
+    }
+    avgGain /= period;
+    avgLoss /= period;
+
+    for (let i = 0; i < klines.length; i += 1) {
+        if (i < period) {
+            rsi.push(null);
+            continue;
+        }
+
+        if (i > period) {
+            // Wilder 平滑
+            const change = klines[i].close - klines[i - 1].close;
+            const gain = Math.max(change, 0);
+            const loss = Math.abs(Math.min(change, 0));
+            avgGain = (avgGain * (period - 1) + gain) / period;
+            avgLoss = (avgLoss * (period - 1) + loss) / period;
+        }
+
+        const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+        rsi.push(Number((100 - 100 / (1 + rs)).toFixed(2)));
+    }
+
+    return rsi;
+}
+
 module.exports = {
     calculateKDJ,
     calculateMA,
     calculateAdaptiveMonthlyMA,
+    calculateBOLL,
+    calculateRSI,
 };

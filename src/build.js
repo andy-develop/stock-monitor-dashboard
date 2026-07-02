@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getKlinesWithCache, saveLastRun } = require('./fetcher');
-const { calculateKDJ, calculateAdaptiveMonthlyMA } = require('./indicators');
+const { calculateKDJ, calculateAdaptiveMonthlyMA, calculateBOLL, calculateRSI } = require('./indicators');
 const { buildDashboardData, renderHtml } = require('./render');
 
 // 配置
@@ -63,6 +63,65 @@ function evaluateAlerts({ latestWeekClose, latestJ, latestMonthClose, latestMA, 
     return alerts;
 }
 
+
+function evaluateSellSignals({ weekKlines, boll, rsi }) {
+    const latestIndex = weekKlines.length - 1;
+    const prevIndex = weekKlines.length - 2;
+
+    const latestClose = weekKlines[latestIndex].close;
+    const prevClose = weekKlines[prevIndex].close;
+    const latestUpperBoll = boll.upper[latestIndex];
+    const prevUpperBoll = boll.upper[prevIndex];
+    const latestRSI = rsi[latestIndex];
+    const prevRSI = rsi[prevIndex];
+
+    // 1. 冲得高：当前或上周收盘价在布林上轨上方
+    const highEnough = latestClose > latestUpperBoll || prevClose > prevUpperBoll;
+
+    // 2. 冲不动了：RSI(6) 曾经 > 70，且当前 RSI 拐头跌破 70
+    //    即当前 RSI < 70，且前 1~2 周内 RSI 曾经 > 70
+    const prevRSIHigh = prevRSI > 70;
+    const twoWeeksAgoRSI = rsi[weekKlines.length - 3];
+    const twoWeeksAgoHigh = twoWeeksAgoRSI !== null && twoWeeksAgoRSI > 70;
+    const rsiTurnedDown = latestRSI < 70 && (prevRSIHigh || twoWeeksAgoHigh);
+
+    const sellTriggered = highEnough && rsiTurnedDown;
+
+    const alerts = [
+        {
+            type: highEnough ? 'danger' : 'success',
+            title: highEnough ? '⚠️ 冲得高（BOLL 上轨）' : '✅ 未冲高（BOLL 上轨）',
+            chartKey: 'boll',
+            metrics: [
+                { label: '最新周收盘价', value: latestClose },
+                { label: 'BOLL 上轨', value: latestUpperBoll },
+            ],
+            reason: highEnough
+                ? `当前或上周收盘价已站上 BOLL(20,2) 上轨（${latestUpperBoll}），属于冲高状态。`
+                : `当前收盘价 ${latestClose} 位于 BOLL(20,2) 上轨（${latestUpperBoll}）下方，未出现冲高。`,
+        },
+        {
+            type: rsiTurnedDown ? 'danger' : 'success',
+            title: rsiTurnedDown ? '⚠️ 冲不动了（RSI 拐头）' : '✅ RSI 未拐头',
+            chartKey: 'rsi',
+            metrics: [
+                { label: '最新周 RSI(6)', value: latestRSI },
+                { label: '上周周 RSI(6)', value: prevRSI },
+            ],
+            reason: rsiTurnedDown
+                ? `RSI(6) 此前突破 70 后拐头向下，当前为 ${latestRSI}，动能减弱。`
+                : `RSI(6) 当前为 ${latestRSI}，未出现超买后拐头跌破 70 的信号。`,
+        },
+    ];
+
+    return {
+        triggered: sellTriggered,
+        alerts,
+        bollData: { upper: boll.upper, middle: boll.middle, lower: boll.lower },
+        rsiData: rsi,
+    };
+}
+
 async function main() {
     try {
         console.log(`开始获取 ${STOCK_NAME} (${STOCK_CODE}) 数据...`);
@@ -79,6 +138,8 @@ async function main() {
 
         const kdjResult = calculateKDJ(weekKlines);
         const maResult = calculateAdaptiveMonthlyMA(monthKlines);
+        const bollResult = calculateBOLL(weekKlines, 20, 2);
+        const rsiResult = calculateRSI(weekKlines, 6);
 
         const latestJ = kdjResult.J[kdjResult.J.length - 1];
         const latestMonth = monthKlines[monthKlines.length - 1];
@@ -93,6 +154,12 @@ async function main() {
             maPeriod: maResult.period,
         });
 
+        const sellSignalResult = evaluateSellSignals({
+            weekKlines,
+            boll: bollResult,
+            rsi: rsiResult,
+        });
+
         const dashboardData = buildDashboardData({
             stockCode: STOCK_CODE,
             stockName: STOCK_NAME,
@@ -102,6 +169,7 @@ async function main() {
             kdj: kdjResult,
             maResult,
             alerts,
+            sellSignalResult,
         });
 
         renderHtml(dashboardData, DIST_DIR);
@@ -117,6 +185,10 @@ async function main() {
             latestMonthClose: latestMonth.close,
             latestMA,
             alerts,
+            sellSignal: {
+                triggered: sellSignalResult.triggered,
+                alerts: sellSignalResult.alerts,
+            },
         });
 
         console.log('✅ 构建完成，dist/index.html 生成成功');

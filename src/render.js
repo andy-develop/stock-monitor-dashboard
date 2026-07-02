@@ -19,6 +19,7 @@ function buildDashboardData({
     kdj,
     maResult,
     alerts,
+    sellSignalResult,
 }) {
     const displayLimit = 100;
     const latestWeek = weekKlines[weekKlines.length - 1];
@@ -47,6 +48,19 @@ function buildDashboardData({
             maPeriod: maResult.period,
             latestClose: latestMonth.close,
             latestMA: maResult.ma[maResult.ma.length - 1],
+        },
+        sellSignals: sellSignalResult.alerts,
+        sellSignalTriggered: sellSignalResult.triggered,
+        bollData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+            upper: sellSignalResult.bollData.upper.slice(-displayLimit),
+            middle: sellSignalResult.bollData.middle.slice(-displayLimit),
+            lower: sellSignalResult.bollData.lower.slice(-displayLimit),
+        },
+        rsiData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            values: sellSignalResult.rsiData.slice(-displayLimit),
         },
     };
 }
