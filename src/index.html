@@ -241,6 +241,8 @@
             const chartTitles = {
                 week: '周K线及 KDJ(9,3,3) 联动趋势图',
                 month: '月K线及 MA 趋势图',
+                monthBoll: '月K线及 BOLL(20,2) 趋势图',
+                monthKdj: '月K线及 KDJ(9,3,3) 联动趋势图',
                 boll: '周K线及 BOLL(20,2) 趋势图',
                 rsi: '周K线 RSI(6) 趋势图',
                 day: '日K线及 MA5 / MA20 / 10日高点 趋势图',
@@ -424,6 +426,59 @@
             return chart;
         }
 
+        function initEtfMonthBollChart(windowIndex, data) {
+            const chart = echarts.init(document.getElementById(`chart-${windowIndex}-monthBoll`));
+            chart.setOption({
+                tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                legend: { data: ['月K线', 'BOLL 上轨', 'BOLL 中轨', 'BOLL 下轨'], top: 0 },
+                xAxis: { type: 'category', data: data.monthBollData.dates },
+                yAxis: { scale: true, splitArea: { show: true } },
+                dataZoom: [{ type: 'inside', start: 0, end: 100 }],
+                series: [
+                    {
+                        name: '月K线', type: 'candlestick', data: data.monthBollData.candlestick,
+                        itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' }
+                    },
+                    { name: 'BOLL 上轨', type: 'line', data: data.monthBollData.upper, showSymbol: false, itemStyle: { color: '#ff9800' }, lineStyle: { type: 'dashed' } },
+                    { name: 'BOLL 中轨', type: 'line', data: data.monthBollData.middle, showSymbol: false, itemStyle: { color: '#9e9e9e' } },
+                    { name: 'BOLL 下轨', type: 'line', data: data.monthBollData.lower, showSymbol: false, itemStyle: { color: '#00bcd4' }, lineStyle: { type: 'dashed' } }
+                ]
+            });
+            return chart;
+        }
+
+        function initEtfMonthKdjChart(windowIndex, data) {
+            const chart = echarts.init(document.getElementById(`chart-${windowIndex}-monthKdj`));
+            chart.setOption({
+                grid: [
+                    { left: '8%', right: '4%', top: '10%', height: '45%' },
+                    { left: '8%', right: '4%', top: '62%', height: '28%' }
+                ],
+                tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                legend: { data: ['月K线', 'K', 'D', 'J'], top: 0 },
+                xAxis: [
+                    { type: 'category', data: data.monthKdjData.dates, gridIndex: 0 },
+                    { type: 'category', data: data.monthKdjData.dates, gridIndex: 1 }
+                ],
+                yAxis: [
+                    { scale: true, splitArea: { show: true }, gridIndex: 0 },
+                    { min: -20, max: 100, gridIndex: 1 }
+                ],
+                dataZoom: [{ type: 'inside', xAxisIndex: [0, 1], start: 0, end: 100 }],
+                series: [
+                    {
+                        name: '月K线', type: 'candlestick', data: data.monthKdjData.candlestick,
+                        xAxisIndex: 0, yAxisIndex: 0,
+                        itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' }
+                    },
+                    { name: 'K', type: 'line', data: data.monthKdjData.k, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, itemStyle: { color: '#e0a926' } },
+                    { name: 'D', type: 'line', data: data.monthKdjData.d, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, itemStyle: { color: '#3277c9' } },
+                    { name: 'J', type: 'line', data: data.monthKdjData.j, xAxisIndex: 1, yAxisIndex: 1, showSymbol: false, itemStyle: { color: '#c437a3' } }
+                ]
+            });
+            return chart;
+        }
+
         function initGreeDayChart(windowIndex, data) {
             const chart = echarts.init(document.getElementById(`chart-${windowIndex}-day`));
             chart.setOption({
@@ -452,6 +507,8 @@
             let chart;
             if (chartKey === 'week') chart = initEtfWeekChart(windowIndex, data);
             else if (chartKey === 'month') chart = initEtfMonthChart(windowIndex, data);
+            else if (chartKey === 'monthBoll') chart = initEtfMonthBollChart(windowIndex, data);
+            else if (chartKey === 'monthKdj') chart = initEtfMonthKdjChart(windowIndex, data);
             else if (chartKey === 'boll') chart = initEtfBollChart(windowIndex, data);
             else if (chartKey === 'rsi') chart = initEtfRsiChart(windowIndex, data);
             else if (chartKey === 'day') chart = initGreeDayChart(windowIndex, data);
