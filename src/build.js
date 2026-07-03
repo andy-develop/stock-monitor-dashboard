@@ -177,6 +177,58 @@ function evaluateHs300BuySignals({ monthKlines, boll, kdj, ma20 }) {
 }
 
 /**
+ * 创业板：买入信号评估（月线 MA60 下方超跌 + 月线跌破 BOLL 下轨）
+ */
+function evaluateChiNextBuySignals({ monthKlines, ma60, boll }) {
+    const latestIndex = monthKlines.length - 1;
+    const latestMonth = monthKlines[latestIndex];
+    const latestClose = latestMonth.close;
+    const latestMA60 = ma60[latestIndex];
+    const latestLower = boll.lower[latestIndex];
+
+    const maAvailable = latestMA60 !== null && latestMA60 !== 0;
+    const deviation = maAvailable ? ((latestMA60 - latestClose) / latestMA60) * 100 : null;
+    const conditionMA = maAvailable && latestClose < latestMA60 * 0.96;
+    const conditionBoll = latestClose < latestLower;
+    const triggered = conditionMA && conditionBoll;
+
+    let title;
+    let reason;
+    if (triggered) {
+        title = '⚠️ 买入信号：月线超跌双条件共振';
+        reason = `当前月线收盘价 ${latestClose} 低于 MA60（${latestMA60}）且跌幅达 ${deviation.toFixed(2)}%，同时跌破 BOLL(20,2) 下轨（${latestLower}），双条件同时满足，建议关注买入机会。`;
+    } else {
+        title = '✅ 暂无买入信号';
+        const deviationText = deviation !== null
+            ? (deviation > 0 ? `低于 MA60 ${deviation.toFixed(2)}%` : `高于 MA60 ${Math.abs(deviation).toFixed(2)}%`)
+            : '数据不足';
+        reason = `当前月线收盘价 ${latestClose}，MA60 ${maAvailable ? latestMA60 : '数据不足'}（${deviationText}），BOLL(20,2) 下轨 ${latestLower}，未同时满足“低于 MA60 超 4%”且“跌破布林下轨”。`;
+    }
+
+    return {
+        triggered,
+        alert: {
+            type: triggered ? 'danger' : 'success',
+            title,
+            chartKeys: ['month', 'monthBoll'],
+            metrics: [
+                { label: '最新月收盘价', value: latestClose },
+                { label: 'MA60', value: maAvailable ? latestMA60 : '数据不足' },
+                { label: 'MA60 偏离', value: deviation !== null ? `${deviation.toFixed(2)}%` : '数据不足' },
+                { label: 'BOLL(20,2) 下轨', value: latestLower },
+            ],
+            reason,
+            signalDetails: [
+                { label: '收盘价 < MA60 且跌幅 > 4%', triggered: conditionMA, value: `收盘 ${latestClose} / MA60 ${latestMA60}${deviation !== null ? ` (${deviation.toFixed(2)}%)` : ''}` },
+                { label: '收盘价跌破 BOLL 下轨', triggered: conditionBoll, value: `收盘 ${latestClose} / 下轨 ${latestLower}` },
+            ],
+        },
+        bollData: { upper: boll.upper, middle: boll.middle, lower: boll.lower },
+        ma60,
+    };
+}
+
+/**
  * 消费类股票：买入机会（三阶段底部监控）
  */
 function evaluateConsumerBuyOpportunities({ latestClose, thresholds, valueHint }) {
@@ -465,6 +517,83 @@ async function buildHs300Window() {
     };
 }
 
+async function buildChiNextWindow() {
+    const code = 'SZ159915';
+    const name = '创业板ETF易方达';
+    const indexName = '创业板指 (ChiNext)';
+
+    console.log(`开始获取 ${name} (${code}) 数据...`);
+    const weekKlines = await getKlinesWithCache(code, 'week', 200);
+    const monthKlines = await getKlinesWithCache(code, 'month', 100);
+    console.log(`  周线数据：${weekKlines.length} 条`);
+    console.log(`  月线数据：${monthKlines.length} 条`);
+
+    if (weekKlines.length < 9) throw new Error('周线数据不足，无法计算 KDJ');
+    if (monthKlines.length < 20) throw new Error('月线数据不足，无法计算 MA60 / BOLL(20,2)');
+
+    // 卖出指标：与红利低波一致（周线 BOLL + RSI）
+    const bollWeek = calculateBOLL(weekKlines, 20, 2);
+    const rsiWeek = calculateRSI(weekKlines, 6);
+
+    // 买入指标：月线 MA60 超跌 + BOLL 下轨
+    const bollMonth = calculateBOLL(monthKlines, 20, 2);
+    const ma60Month = calculateMA(monthKlines, 60);
+
+    const buySignalResult = evaluateChiNextBuySignals({
+        monthKlines,
+        ma60: ma60Month,
+        boll: bollMonth,
+    });
+
+    const sellSignalResult = evaluateEtfSellSignals({
+        weekKlines,
+        boll: bollWeek,
+        rsi: rsiWeek,
+    });
+
+    const displayLimit = 100;
+
+    return {
+        id: 'chinext',
+        stockName: name,
+        stockCode: code,
+        indexName,
+        updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+        buySectionTitle: '买入信号',
+        sellSectionTitle: '卖出信号',
+        buyAlerts: [buySignalResult.alert],
+        sellAlert: sellSignalResult.alert,
+        weekData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+        },
+        monthData: {
+            dates: monthKlines.slice(-displayLimit).map((k) => k.date),
+            closes: monthKlines.slice(-displayLimit).map((k) => k.close),
+            ma: ma60Month.slice(-displayLimit),
+            maPeriod: 60,
+        },
+        bollData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+            upper: sellSignalResult.bollData.upper.slice(-displayLimit),
+            middle: sellSignalResult.bollData.middle.slice(-displayLimit),
+            lower: sellSignalResult.bollData.lower.slice(-displayLimit),
+        },
+        rsiData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            values: sellSignalResult.rsiData.slice(-displayLimit),
+        },
+        monthBollData: {
+            dates: monthKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: monthKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+            upper: buySignalResult.bollData.upper.slice(-displayLimit),
+            middle: buySignalResult.bollData.middle.slice(-displayLimit),
+            lower: buySignalResult.bollData.lower.slice(-displayLimit),
+        },
+    };
+}
+
 async function buildConsumerWindow({ id, code, name, thresholds, valueHint, hint }) {
     const indexName = '消费类股票';
 
@@ -541,12 +670,13 @@ async function main() {
     try {
         const etfWindow = await buildEtfWindow();
         const hs300Window = await buildHs300Window();
+        const chinextWindow = await buildChiNextWindow();
         const greeWindow = await buildGreeWindow();
         const shuanghuiWindow = await buildShuanghuiWindow();
         const deejWindow = await buildDeejWindow();
         const sanquanWindow = await buildSanquanWindow();
 
-        const dashboardData = [etfWindow, hs300Window, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow];
+        const dashboardData = [etfWindow, hs300Window, chinextWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow];
 
         renderHtml(dashboardData, DIST_DIR);
         copyEcharts();
@@ -556,6 +686,7 @@ async function main() {
             windows: [
                 { id: etfWindow.id, stockCode: etfWindow.stockCode, alerts: etfWindow.buyAlerts, sellAlert: etfWindow.sellAlert },
                 { id: hs300Window.id, stockCode: hs300Window.stockCode, alerts: hs300Window.buyAlerts, sellAlert: hs300Window.sellAlert },
+                { id: chinextWindow.id, stockCode: chinextWindow.stockCode, alerts: chinextWindow.buyAlerts, sellAlert: chinextWindow.sellAlert },
                 { id: greeWindow.id, stockCode: greeWindow.stockCode, buyAlerts: greeWindow.buyAlerts, sellAlert: greeWindow.sellAlert },
                 { id: shuanghuiWindow.id, stockCode: shuanghuiWindow.stockCode, buyAlerts: shuanghuiWindow.buyAlerts, sellAlert: shuanghuiWindow.sellAlert },
                 { id: deejWindow.id, stockCode: deejWindow.stockCode, buyAlerts: deejWindow.buyAlerts, sellAlert: deejWindow.sellAlert },
