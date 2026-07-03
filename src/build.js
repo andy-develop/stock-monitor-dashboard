@@ -74,8 +74,11 @@ function evaluateEtfBuyAlerts({ latestWeekClose, latestJ, latestMonthClose, late
  * ETF：卖出信号评估（BOLL + RSI 同时满足）
  * BOLL 条件：最近 5 周内周线收盘价曾突破 BOLL(20,2) 上轨
  * RSI 条件：最近 10 周内 RSI(6) 曾经超过 70，且当前 RSI(6) < 70
+ *
+ * 可选附加条件（传入 dayKlines / dayMA60 时启用）：
+ * 日 K 线最近 2 日收盘价低于 MA60，且此前连续 18 日收盘价高于 MA60
  */
-function evaluateEtfSellSignals({ weekKlines, boll, rsi }) {
+function evaluateEtfSellSignals({ weekKlines, boll, rsi, dayKlines = null, dayMA60 = null }) {
     const latestIndex = weekKlines.length - 1;
 
     const latestClose = weekKlines[latestIndex].close;
@@ -100,20 +103,58 @@ function evaluateEtfSellSignals({ weekKlines, boll, rsi }) {
     const maxRecentRSI = recentRSI.reduce((max, val) => (val !== null && val > max ? val : max), -Infinity);
     const rsiWasHigh = maxRecentRSI > 70;
     const rsiTurnedDown = latestRSI !== null && latestRSI < 70;
-    const triggered = highEnough && rsiWasHigh && rsiTurnedDown;
+    const weeklyTriggered = highEnough && rsiWasHigh && rsiTurnedDown;
+
+    // 日线 MA60 破位条件
+    let dailyTriggered = false;
+    let dailyConditionText = '未启用';
+    let latestDayClose = null;
+    let latestDayMA60 = null;
+    if (dayKlines && dayMA60 && dayKlines.length >= 20) {
+        latestDayClose = dayKlines[dayKlines.length - 1].close;
+        latestDayMA60 = dayMA60[dayMA60.length - 1];
+
+        const last20Closes = dayKlines.slice(-20).map((k) => k.close);
+        const last20MA60 = dayMA60.slice(-20);
+        const last2Below = last20Closes[18] < last20MA60[18] && last20Closes[19] < last20MA60[19];
+        const prior18Above = last20Closes.slice(0, 18).every((c, i) => c > last20MA60[i]);
+        dailyTriggered = last2Below && prior18Above;
+        dailyConditionText = dailyTriggered ? '是' : '否';
+    }
+
+    const triggered = weeklyTriggered || dailyTriggered;
 
     let type;
     let title;
     let reason;
     if (triggered) {
         type = 'danger';
-        title = '⚠️ 卖出信号：冲高且动能不足';
-        const breakText = weeksSinceBreak === 0 ? '本周' : `${weeksSinceBreak} 周前`;
-        reason = `${breakText}收盘价曾突破 BOLL(20,2) 上轨，且最近 10 周内 RSI(6) 曾达到 ${maxRecentRSI}（超过 70），当前回落至 ${latestRSI}，建议关注卖出机会。`;
+        title = '⚠️ 卖出信号：冲高或日线破位';
+        if (weeklyTriggered && dailyTriggered) {
+            const breakText = weeksSinceBreak === 0 ? '本周' : `${weeksSinceBreak} 周前`;
+            reason = `${breakText}收盘价曾突破 BOLL(20,2) 上轨，且 RSI(6) 从超买区回落至 ${latestRSI}；同时日线最近 2 日收盘价低于 MA60，而此前 18 日均高于 MA60。两个维度均触发卖出信号，建议高度关注。`;
+        } else if (weeklyTriggered) {
+            const breakText = weeksSinceBreak === 0 ? '本周' : `${weeksSinceBreak} 周前`;
+            reason = `${breakText}收盘价曾突破 BOLL(20,2) 上轨，且最近 10 周内 RSI(6) 曾达到 ${maxRecentRSI}（超过 70），当前回落至 ${latestRSI}，建议关注卖出机会。`;
+        } else {
+            reason = `日线出现破位信号：最近 2 日收盘价低于 MA60（最新收盘 ${latestDayClose} / MA60 ${latestDayMA60}），而此前连续 18 日收盘价均高于 MA60，建议关注卖出机会。`;
+        }
     } else {
         type = 'success';
         title = '✅ 暂无卖出信号';
-        reason = `最近 5 周内收盘价${highEnough ? '' : '未'}突破 BOLL(20,2) 上轨，最近 10 周 RSI(6) 最高为 ${maxRecentRSI === -Infinity ? '-' : maxRecentRSI}，当前为 ${latestRSI}，未同时满足“近5周冲高”与“RSI 拐头”条件。`;
+        reason = `周线：最近 5 周内收盘价${highEnough ? '' : '未'}突破 BOLL(20,2) 上轨，最近 10 周 RSI(6) 最高为 ${maxRecentRSI === -Infinity ? '-' : maxRecentRSI}，当前为 ${latestRSI}；${dayKlines ? `日线 MA60 破位条件：${dailyConditionText}。` : ''}未触发卖出条件。`;
+    }
+
+    const metrics = [
+        { label: '最新周收盘价', value: latestClose },
+        { label: 'BOLL 上轨', value: latestUpperBoll },
+        { label: '近5周是否突破上轨', value: highEnough ? (weeksSinceBreak === 0 ? '是（本周）' : `是（${weeksSinceBreak} 周前）`) : '否' },
+        { label: '最新周 RSI(6)', value: latestRSI },
+        { label: '近10周 RSI(6) 最高', value: maxRecentRSI === -Infinity ? '-' : maxRecentRSI },
+    ];
+    if (dayKlines) {
+        metrics.push({ label: '日线 MA60 破位', value: dailyConditionText });
+        metrics.push({ label: '最新日收盘 / MA60', value: latestDayClose !== null && latestDayMA60 !== null ? `${latestDayClose} / ${latestDayMA60}` : '数据不足' });
     }
 
     return {
@@ -122,13 +163,7 @@ function evaluateEtfSellSignals({ weekKlines, boll, rsi }) {
             type,
             title,
             chartKeys: ['boll', 'rsi'],
-            metrics: [
-                { label: '最新周收盘价', value: latestClose },
-                { label: 'BOLL 上轨', value: latestUpperBoll },
-                { label: '近5周是否突破上轨', value: highEnough ? (weeksSinceBreak === 0 ? '是（本周）' : `是（${weeksSinceBreak} 周前）`) : '否' },
-                { label: '最新周 RSI(6)', value: latestRSI },
-                { label: '近10周 RSI(6) 最高', value: maxRecentRSI === -Infinity ? '-' : maxRecentRSI },
-            ],
+            metrics,
             reason,
         },
         bollData: { upper: boll.upper, middle: boll.middle, lower: boll.lower },
@@ -451,15 +486,18 @@ async function buildHs300Window() {
     console.log(`开始获取 ${name} (${code}) 数据...`);
     const weekKlines = await getKlinesWithCache(code, 'week', 200);
     const monthKlines = await getKlinesWithCache(code, 'month', 100);
+    const dayKlines = await getKlinesWithCache(code, 'day', 300);
     console.log(`  周线数据：${weekKlines.length} 条`);
     console.log(`  月线数据：${monthKlines.length} 条`);
+    console.log(`  日线数据：${dayKlines.length} 条`);
 
     if (weekKlines.length < 9) throw new Error('周线数据不足，无法计算 KDJ');
     if (monthKlines.length < 20) throw new Error('月线数据不足，无法计算 MA20 / BOLL(20,2)');
 
-    // 卖出指标：与红利低波一致（周线 BOLL + RSI）
+    // 卖出指标：周线 BOLL + RSI，日线 MA60 破位
     const bollWeek = calculateBOLL(weekKlines, 20, 2);
     const rsiWeek = calculateRSI(weekKlines, 6);
+    const ma60Day = calculateMA(dayKlines, 60);
 
     // 买入指标：月线 BOLL + KDJ + MA20
     const bollMonth = calculateBOLL(monthKlines, 20, 2);
@@ -477,6 +515,8 @@ async function buildHs300Window() {
         weekKlines,
         boll: bollWeek,
         rsi: rsiWeek,
+        dayKlines,
+        dayMA60: ma60Day,
     });
 
     const displayLimit = 100;
@@ -537,15 +577,18 @@ async function buildChiNextWindow() {
     console.log(`开始获取 ${name} (${code}) 数据...`);
     const weekKlines = await getKlinesWithCache(code, 'week', 200);
     const monthKlines = await getKlinesWithCache(code, 'month', 100);
+    const dayKlines = await getKlinesWithCache(code, 'day', 300);
     console.log(`  周线数据：${weekKlines.length} 条`);
     console.log(`  月线数据：${monthKlines.length} 条`);
+    console.log(`  日线数据：${dayKlines.length} 条`);
 
     if (weekKlines.length < 9) throw new Error('周线数据不足，无法计算 KDJ');
     if (monthKlines.length < 20) throw new Error('月线数据不足，无法计算 MA60 / BOLL(20,2)');
 
-    // 卖出指标：与红利低波一致（周线 BOLL + RSI）
+    // 卖出指标：周线 BOLL + RSI，日线 MA60 破位
     const bollWeek = calculateBOLL(weekKlines, 20, 2);
     const rsiWeek = calculateRSI(weekKlines, 6);
+    const ma60Day = calculateMA(dayKlines, 60);
 
     // 买入指标：月线 MA60 超跌 + BOLL 下轨
     const bollMonth = calculateBOLL(monthKlines, 20, 2);
@@ -561,6 +604,8 @@ async function buildChiNextWindow() {
         weekKlines,
         boll: bollWeek,
         rsi: rsiWeek,
+        dayKlines,
+        dayMA60: ma60Day,
     });
 
     const displayLimit = 100;
