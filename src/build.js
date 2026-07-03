@@ -72,6 +72,7 @@ function evaluateEtfBuyAlerts({ latestWeekClose, latestJ, latestMonthClose, late
 
 /**
  * ETF：卖出信号评估（BOLL + RSI 同时满足）
+ * RSI 条件：最近 10 周内 RSI(6) 曾经超过 70，且当前 RSI(6) < 70
  */
 function evaluateEtfSellSignals({ weekKlines, boll, rsi }) {
     const latestIndex = weekKlines.length - 1;
@@ -81,14 +82,15 @@ function evaluateEtfSellSignals({ weekKlines, boll, rsi }) {
     const prevClose = weekKlines[prevIndex].close;
     const latestUpperBoll = boll.upper[latestIndex];
     const latestRSI = rsi[latestIndex];
-    const prevRSI = rsi[prevIndex];
-    const twoWeeksAgoRSI = rsi[weekKlines.length - 3];
 
     const highEnough = latestClose > latestUpperBoll || prevClose > latestUpperBoll;
-    const prevRSIHigh = prevRSI > 70;
-    const twoWeeksAgoHigh = twoWeeksAgoRSI !== null && twoWeeksAgoRSI > 70;
-    const rsiTurnedDown = latestRSI < 70 && (prevRSIHigh || twoWeeksAgoHigh);
-    const triggered = highEnough && rsiTurnedDown;
+
+    // 最近 10 周（含当前）的 RSI 中是否有超过 70 的记录
+    const recentRSI = rsi.slice(-10);
+    const maxRecentRSI = recentRSI.reduce((max, val) => (val !== null && val > max ? val : max), -Infinity);
+    const rsiWasHigh = maxRecentRSI > 70;
+    const rsiTurnedDown = latestRSI !== null && latestRSI < 70;
+    const triggered = highEnough && rsiWasHigh && rsiTurnedDown;
 
     let type;
     let title;
@@ -96,11 +98,11 @@ function evaluateEtfSellSignals({ weekKlines, boll, rsi }) {
     if (triggered) {
         type = 'danger';
         title = '⚠️ 卖出信号：冲高且动能不足';
-        reason = `当前或上周收盘价已站上 BOLL(20,2) 上轨（${latestUpperBoll}），同时 RSI(6) 从超买区拐头向下，当前为 ${latestRSI}，建议关注卖出机会。`;
+        reason = `当前或上周收盘价已站上 BOLL(20,2) 上轨（${latestUpperBoll}），且最近 10 周内 RSI(6) 曾达到 ${maxRecentRSI}（超过 70），当前回落至 ${latestRSI}，建议关注卖出机会。`;
     } else {
         type = 'success';
         title = '✅ 暂无卖出信号';
-        reason = `当前收盘价 ${latestClose} 位于 BOLL(20,2) 上轨（${latestUpperBoll}）下方，RSI(6) 为 ${latestRSI}，未同时满足“冲高”与“RSI 拐头”条件。`;
+        reason = `当前收盘价 ${latestClose} 位于 BOLL(20,2) 上轨（${latestUpperBoll}）下方，最近 10 周 RSI(6) 最高为 ${maxRecentRSI === -Infinity ? '-' : maxRecentRSI}，当前为 ${latestRSI}，未同时满足“冲高”与“RSI 拐头”条件。`;
     }
 
     return {
@@ -113,7 +115,7 @@ function evaluateEtfSellSignals({ weekKlines, boll, rsi }) {
                 { label: '最新周收盘价', value: latestClose },
                 { label: 'BOLL 上轨', value: latestUpperBoll },
                 { label: '最新周 RSI(6)', value: latestRSI },
-                { label: '上周周 RSI(6)', value: prevRSI },
+                { label: '近10周 RSI(6) 最高', value: maxRecentRSI === -Infinity ? '-' : maxRecentRSI },
             ],
             reason,
         },
