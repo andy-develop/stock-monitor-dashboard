@@ -892,6 +892,97 @@ async function buildThsWindow() {
         },
     };
 }
+
+async function buildChinaMobileWindow() {
+    const code = 'SH600941';
+    const name = '中国移动';
+    const indexName = '通信运营 · 高股息红利';
+
+    console.log(`开始获取 ${name} (${code}) 数据...`);
+    const weekKlines = await getKlinesWithCache(code, 'week', 200);
+    const monthKlines = await getKlinesWithCache(code, 'month', 100);
+    console.log(`  周线数据：${weekKlines.length} 条`);
+    console.log(`  月线数据：${monthKlines.length} 条`);
+
+    if (weekKlines.length < 20) throw new Error('周线数据不足，无法计算 BOLL(20,2)');
+
+    const displayLimit = 100;
+    const weekBoll = calculateBOLL(weekKlines, 20, 2);
+
+    // 月线不足 60 条时无法计算 MA60，买入信号暂不显示
+    if (monthKlines.length < 60) {
+        return {
+            id: 'chinamobile',
+            stockName: name,
+            stockCode: code,
+            indexName,
+            updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+            buySectionTitle: '买入信号',
+            sellSectionTitle: '卖出信号',
+            buyAlerts: [{
+                type: 'yellow',
+                title: '⏸️ 买入信号待启用',
+                chartKeys: [],
+                metrics: [
+                    { label: '当前月线数据条数', value: monthKlines.length },
+                    { label: '所需月线数据条数', value: 60 },
+                ],
+                reason: `中国移动上市时间较短，当前月线数据仅 ${monthKlines.length} 条，不足 60 条，暂无法计算 MA60。当数据满足 60 个月后将自动显示买入信号。`,
+            }],
+            sellAlert: null,
+            weekData: {
+                dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+                candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+            },
+            bollData: {
+                dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+                candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+                upper: weekBoll.upper.slice(-displayLimit),
+                middle: weekBoll.middle.slice(-displayLimit),
+                lower: weekBoll.lower.slice(-displayLimit),
+            },
+        };
+    }
+
+    const ma60Month = calculateMA(monthKlines, 60);
+
+    const buySignalResult = evaluateMonthMA60WeekBollBuySignals({
+        stockName: name,
+        monthKlines,
+        ma60: ma60Month,
+        weekKlines,
+        weekBoll,
+    });
+
+    return {
+        id: 'chinamobile',
+        stockName: name,
+        stockCode: code,
+        indexName,
+        updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+        buySectionTitle: '买入信号',
+        sellSectionTitle: '卖出信号',
+        buyAlerts: [buySignalResult.alert],
+        sellAlert: null,
+        weekData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+        },
+        monthData: {
+            dates: monthKlines.slice(-displayLimit).map((k) => k.date),
+            closes: monthKlines.slice(-displayLimit).map((k) => k.close),
+            ma: ma60Month.slice(-displayLimit),
+            maPeriod: 60,
+        },
+        bollData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+            upper: buySignalResult.weekBollData.upper.slice(-displayLimit),
+            middle: buySignalResult.weekBollData.middle.slice(-displayLimit),
+            lower: buySignalResult.weekBollData.lower.slice(-displayLimit),
+        },
+    };
+}
 async function main() {
     try {
         const etfWindow = await buildEtfWindow();
@@ -903,8 +994,9 @@ async function main() {
         const sanquanWindow = await buildSanquanWindow();
         const shenhuaWindow = await buildShenhuaWindow();
         const thsWindow = await buildThsWindow();
+        const chinamobileWindow = await buildChinaMobileWindow();
 
-        const dashboardData = [etfWindow, hs300Window, chinextWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow, thsWindow];
+        const dashboardData = [etfWindow, hs300Window, chinextWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow, thsWindow, chinamobileWindow];
 
         renderHtml(dashboardData, DIST_DIR);
         copyEcharts();
@@ -921,6 +1013,7 @@ async function main() {
                 { id: sanquanWindow.id, stockCode: sanquanWindow.stockCode, buyAlerts: sanquanWindow.buyAlerts, sellAlert: sanquanWindow.sellAlert },
                 { id: shenhuaWindow.id, stockCode: shenhuaWindow.stockCode, buyAlerts: shenhuaWindow.buyAlerts, sellAlert: shenhuaWindow.sellAlert },
                 { id: thsWindow.id, stockCode: thsWindow.stockCode, buyAlerts: thsWindow.buyAlerts, sellAlert: thsWindow.sellAlert },
+                { id: chinamobileWindow.id, stockCode: chinamobileWindow.stockCode, buyAlerts: chinamobileWindow.buyAlerts, sellAlert: chinamobileWindow.sellAlert },
             ],
         });
 
