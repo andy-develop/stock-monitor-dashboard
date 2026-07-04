@@ -276,9 +276,9 @@ function evaluateChiNextBuySignals({ monthKlines, ma60, boll }) {
 }
 
 /**
- * 中国神华：买入信号评估（月K线低于MA60 + 周K线下穿布林下轨）
+ * 月线 MA60 + 周线 BOLL 下轨买入信号评估（月K线低于MA60 + 周K线下穿布林下轨）
  */
-function evaluateShenhuaBuySignals({ monthKlines, ma60, weekKlines, weekBoll }) {
+function evaluateMonthMA60WeekBollBuySignals({ stockName, monthKlines, ma60, weekKlines, weekBoll }) {
     const latestMonthIndex = monthKlines.length - 1;
     const latestMonthClose = monthKlines[latestMonthIndex].close;
     const latestMA60 = ma60[latestMonthIndex];
@@ -296,13 +296,13 @@ function evaluateShenhuaBuySignals({ monthKlines, ma60, weekKlines, weekBoll }) 
     let reason;
     if (triggered) {
         title = '⚠️ 买入信号：月K低于MA60且周K下穿布林下轨';
-        reason = `当前月线收盘价 ${latestMonthClose} 低于 MA60（${latestMA60}），且周线收盘价 ${latestWeekClose} 跌破 BOLL(20,2) 下轨（${latestWeekLower}），双条件同时满足，建议关注买入机会。`;
+        reason = `当前${stockName}月线收盘价 ${latestMonthClose} 低于 MA60（${latestMA60}），且周线收盘价 ${latestWeekClose} 跌破 BOLL(20,2) 下轨（${latestWeekLower}），双条件同时满足，建议关注买入机会。`;
     } else {
         title = '✅ 暂无买入信号';
         const maText = maAvailable
             ? (latestMonthClose < latestMA60 ? '低于 MA60' : `高于 MA60 ${((latestMonthClose - latestMA60) / latestMA60 * 100).toFixed(2)}%`)
             : '数据不足';
-        reason = `当前月线收盘价 ${latestMonthClose}，MA60 ${maAvailable ? latestMA60 : '数据不足'}（${maText}）；周线收盘价 ${latestWeekClose}，BOLL(20,2) 下轨 ${latestWeekLower}。未同时满足“月K线低于MA60”且“周K线下穿布林下轨”。`;
+        reason = `当前${stockName}月线收盘价 ${latestMonthClose}，MA60 ${maAvailable ? latestMA60 : '数据不足'}（${maText}）；周线收盘价 ${latestWeekClose}，BOLL(20,2) 下轨 ${latestWeekLower}。未同时满足“月K线低于MA60”且“周K线下穿布林下轨”。`;
     }
 
     return {
@@ -793,7 +793,8 @@ async function buildShenhuaWindow() {
     const weekBoll = calculateBOLL(weekKlines, 20, 2);
     const ma60Month = calculateMA(monthKlines, 60);
 
-    const buySignalResult = evaluateShenhuaBuySignals({
+    const buySignalResult = evaluateMonthMA60WeekBollBuySignals({
+        stockName: name,
         monthKlines,
         ma60: ma60Month,
         weekKlines,
@@ -832,6 +833,65 @@ async function buildShenhuaWindow() {
     };
 }
 
+
+async function buildThsWindow() {
+    const code = 'SZ300033';
+    const name = '同花顺';
+    const indexName = '金融科技 · 证券信息服务';
+    const hint = '提示：买入信号仅在实控人仍为易峥时有效';
+
+    console.log(`开始获取 ${name} (${code}) 数据...`);
+    const weekKlines = await getKlinesWithCache(code, 'week', 200);
+    const monthKlines = await getKlinesWithCache(code, 'month', 100);
+    console.log(`  周线数据：${weekKlines.length} 条`);
+    console.log(`  月线数据：${monthKlines.length} 条`);
+
+    if (weekKlines.length < 20) throw new Error('周线数据不足，无法计算 BOLL(20,2)');
+    if (monthKlines.length < 60) throw new Error('月线数据不足，无法计算 MA60');
+
+    const weekBoll = calculateBOLL(weekKlines, 20, 2);
+    const ma60Month = calculateMA(monthKlines, 60);
+
+    const buySignalResult = evaluateMonthMA60WeekBollBuySignals({
+        stockName: name,
+        monthKlines,
+        ma60: ma60Month,
+        weekKlines,
+        weekBoll,
+    });
+
+    const displayLimit = 100;
+
+    return {
+        id: 'ths',
+        stockName: name,
+        stockCode: code,
+        indexName,
+        hint,
+        updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+        buySectionTitle: '买入信号',
+        sellSectionTitle: '卖出信号',
+        buyAlerts: [buySignalResult.alert],
+        sellAlert: null,
+        weekData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+        },
+        monthData: {
+            dates: monthKlines.slice(-displayLimit).map((k) => k.date),
+            closes: monthKlines.slice(-displayLimit).map((k) => k.close),
+            ma: ma60Month.slice(-displayLimit),
+            maPeriod: 60,
+        },
+        bollData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+            upper: buySignalResult.weekBollData.upper.slice(-displayLimit),
+            middle: buySignalResult.weekBollData.middle.slice(-displayLimit),
+            lower: buySignalResult.weekBollData.lower.slice(-displayLimit),
+        },
+    };
+}
 async function main() {
     try {
         const etfWindow = await buildEtfWindow();
@@ -842,8 +902,9 @@ async function main() {
         const deejWindow = await buildDeejWindow();
         const sanquanWindow = await buildSanquanWindow();
         const shenhuaWindow = await buildShenhuaWindow();
+        const thsWindow = await buildThsWindow();
 
-        const dashboardData = [etfWindow, hs300Window, chinextWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow];
+        const dashboardData = [etfWindow, hs300Window, chinextWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow, thsWindow];
 
         renderHtml(dashboardData, DIST_DIR);
         copyEcharts();
@@ -859,6 +920,7 @@ async function main() {
                 { id: deejWindow.id, stockCode: deejWindow.stockCode, buyAlerts: deejWindow.buyAlerts, sellAlert: deejWindow.sellAlert },
                 { id: sanquanWindow.id, stockCode: sanquanWindow.stockCode, buyAlerts: sanquanWindow.buyAlerts, sellAlert: sanquanWindow.sellAlert },
                 { id: shenhuaWindow.id, stockCode: shenhuaWindow.stockCode, buyAlerts: shenhuaWindow.buyAlerts, sellAlert: shenhuaWindow.sellAlert },
+                { id: thsWindow.id, stockCode: thsWindow.stockCode, buyAlerts: thsWindow.buyAlerts, sellAlert: thsWindow.sellAlert },
             ],
         });
 
