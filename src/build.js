@@ -276,6 +276,59 @@ function evaluateChiNextBuySignals({ monthKlines, ma60, boll }) {
 }
 
 /**
+ * 中国神华：买入信号评估（月K线低于MA60 + 周K线下穿布林下轨）
+ */
+function evaluateShenhuaBuySignals({ monthKlines, ma60, weekKlines, weekBoll }) {
+    const latestMonthIndex = monthKlines.length - 1;
+    const latestMonthClose = monthKlines[latestMonthIndex].close;
+    const latestMA60 = ma60[latestMonthIndex];
+
+    const latestWeekIndex = weekKlines.length - 1;
+    const latestWeekClose = weekKlines[latestWeekIndex].close;
+    const latestWeekLower = weekBoll.lower[latestWeekIndex];
+
+    const maAvailable = latestMA60 !== null && latestMA60 !== 0;
+    const conditionMA = maAvailable && latestMonthClose < latestMA60;
+    const conditionBoll = latestWeekClose < latestWeekLower;
+    const triggered = conditionMA && conditionBoll;
+
+    let title;
+    let reason;
+    if (triggered) {
+        title = '⚠️ 买入信号：月K低于MA60且周K下穿布林下轨';
+        reason = `当前月线收盘价 ${latestMonthClose} 低于 MA60（${latestMA60}），且周线收盘价 ${latestWeekClose} 跌破 BOLL(20,2) 下轨（${latestWeekLower}），双条件同时满足，建议关注买入机会。`;
+    } else {
+        title = '✅ 暂无买入信号';
+        const maText = maAvailable
+            ? (latestMonthClose < latestMA60 ? '低于 MA60' : `高于 MA60 ${((latestMonthClose - latestMA60) / latestMA60 * 100).toFixed(2)}%`)
+            : '数据不足';
+        reason = `当前月线收盘价 ${latestMonthClose}，MA60 ${maAvailable ? latestMA60 : '数据不足'}（${maText}）；周线收盘价 ${latestWeekClose}，BOLL(20,2) 下轨 ${latestWeekLower}。未同时满足“月K线低于MA60”且“周K线下穿布林下轨”。`;
+    }
+
+    return {
+        triggered,
+        alert: {
+            type: triggered ? 'danger' : 'success',
+            title,
+            chartKeys: ['month', 'boll'],
+            metrics: [
+                { label: '最新月收盘价', value: latestMonthClose },
+                { label: 'MA60', value: maAvailable ? latestMA60 : '数据不足' },
+                { label: '最新周收盘价', value: latestWeekClose },
+                { label: '周 BOLL(20,2) 下轨', value: latestWeekLower },
+            ],
+            reason,
+            signalDetails: [
+                { label: '月K线收盘价 < MA60', triggered: conditionMA, value: `收盘 ${latestMonthClose} / MA60 ${latestMA60}` },
+                { label: '周K线收盘价 < BOLL 下轨', triggered: conditionBoll, value: `收盘 ${latestWeekClose} / 下轨 ${latestWeekLower}` },
+            ],
+        },
+        ma60,
+        weekBollData: { upper: weekBoll.upper, middle: weekBoll.middle, lower: weekBoll.lower },
+    };
+}
+
+/**
  * 消费类股票：买入机会（三阶段底部监控）
  */
 function evaluateConsumerBuyOpportunities({ latestClose, thresholds, valueHint }) {
@@ -723,6 +776,62 @@ async function buildSanquanWindow() {
     });
 }
 
+async function buildShenhuaWindow() {
+    const code = 'SH601088';
+    const name = '中国神华';
+    const indexName = '煤炭 · 高股息红利';
+
+    console.log(`开始获取 ${name} (${code}) 数据...`);
+    const weekKlines = await getKlinesWithCache(code, 'week', 200);
+    const monthKlines = await getKlinesWithCache(code, 'month', 100);
+    console.log(`  周线数据：${weekKlines.length} 条`);
+    console.log(`  月线数据：${monthKlines.length} 条`);
+
+    if (weekKlines.length < 20) throw new Error('周线数据不足，无法计算 BOLL(20,2)');
+    if (monthKlines.length < 60) throw new Error('月线数据不足，无法计算 MA60');
+
+    const weekBoll = calculateBOLL(weekKlines, 20, 2);
+    const ma60Month = calculateMA(monthKlines, 60);
+
+    const buySignalResult = evaluateShenhuaBuySignals({
+        monthKlines,
+        ma60: ma60Month,
+        weekKlines,
+        weekBoll,
+    });
+
+    const displayLimit = 100;
+
+    return {
+        id: 'shenhua',
+        stockName: name,
+        stockCode: code,
+        indexName,
+        updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+        buySectionTitle: '买入信号',
+        sellSectionTitle: '卖出信号',
+        buyAlerts: [buySignalResult.alert],
+        sellAlert: null,
+        weekData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+        },
+        monthData: {
+            dates: monthKlines.slice(-displayLimit).map((k) => k.date),
+            closes: monthKlines.slice(-displayLimit).map((k) => k.close),
+            ma: ma60Month.slice(-displayLimit),
+            maPeriod: 60,
+        },
+        bollData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+            upper: buySignalResult.weekBollData.upper.slice(-displayLimit),
+            middle: buySignalResult.weekBollData.middle.slice(-displayLimit),
+            lower: buySignalResult.weekBollData.lower.slice(-displayLimit),
+        },
+    };
+}
+
 async function main() {
     try {
         const etfWindow = await buildEtfWindow();
@@ -732,8 +841,9 @@ async function main() {
         const shuanghuiWindow = await buildShuanghuiWindow();
         const deejWindow = await buildDeejWindow();
         const sanquanWindow = await buildSanquanWindow();
+        const shenhuaWindow = await buildShenhuaWindow();
 
-        const dashboardData = [etfWindow, hs300Window, chinextWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow];
+        const dashboardData = [etfWindow, hs300Window, chinextWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow];
 
         renderHtml(dashboardData, DIST_DIR);
         copyEcharts();
@@ -748,6 +858,7 @@ async function main() {
                 { id: shuanghuiWindow.id, stockCode: shuanghuiWindow.stockCode, buyAlerts: shuanghuiWindow.buyAlerts, sellAlert: shuanghuiWindow.sellAlert },
                 { id: deejWindow.id, stockCode: deejWindow.stockCode, buyAlerts: deejWindow.buyAlerts, sellAlert: deejWindow.sellAlert },
                 { id: sanquanWindow.id, stockCode: sanquanWindow.stockCode, buyAlerts: sanquanWindow.buyAlerts, sellAlert: sanquanWindow.sellAlert },
+                { id: shenhuaWindow.id, stockCode: shenhuaWindow.stockCode, buyAlerts: shenhuaWindow.buyAlerts, sellAlert: shenhuaWindow.sellAlert },
             ],
         });
 
