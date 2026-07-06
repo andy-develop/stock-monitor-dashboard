@@ -1248,6 +1248,63 @@ async function buildMideaWindow() {
     };
 }
 
+async function buildMoutaiWindow() {
+    const code = 'SH600519';
+    const name = '贵州茅台';
+    const indexName = '白酒 · 食品饮料龙头';
+
+    console.log(`开始获取 ${name} (${code}) 数据...`);
+    const weekKlines = await getKlinesWithCache(code, 'week', 200);
+    const monthKlines = await getKlinesWithCache(code, 'month', 100);
+    console.log(`  周线数据：${weekKlines.length} 条`);
+    console.log(`  月线数据：${monthKlines.length} 条`);
+
+    if (weekKlines.length < 20) throw new Error('周线数据不足，无法计算 BOLL(20,2)');
+    if (monthKlines.length < 60) throw new Error('月线数据不足，无法计算 MA60');
+
+    const weekBoll = calculateBOLL(weekKlines, 20, 2);
+    const ma60Month = calculateMA(monthKlines, 60);
+
+    const buySignalResult = evaluateMonthMA60WeekBollBuySignals({
+        stockName: name,
+        monthKlines,
+        ma60: ma60Month,
+        weekKlines,
+        weekBoll,
+    });
+
+    const displayLimit = 100;
+
+    return {
+        id: 'moutai',
+        stockName: name,
+        stockCode: code,
+        indexName,
+        updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+        buySectionTitle: '买入信号',
+        sellSectionTitle: '卖出信号',
+        buyAlerts: [buySignalResult.alert],
+        sellAlert: null,
+        weekData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+        },
+        monthData: {
+            dates: monthKlines.slice(-displayLimit).map((k) => k.date),
+            closes: monthKlines.slice(-displayLimit).map((k) => k.close),
+            ma: ma60Month.slice(-displayLimit),
+            maPeriod: 60,
+        },
+        bollData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+            upper: buySignalResult.weekBollData.upper.slice(-displayLimit),
+            middle: buySignalResult.weekBollData.middle.slice(-displayLimit),
+            lower: buySignalResult.weekBollData.lower.slice(-displayLimit),
+        },
+    };
+}
+
 async function main() {
     try {
         const etfWindow = await buildEtfWindow();
@@ -1264,8 +1321,9 @@ async function main() {
         const sinopecWindow = await buildSinopecWindow();
         const cnoocWindow = await buildCnoocWindow();
         const mideaWindow = await buildMideaWindow();
+        const moutaiWindow = await buildMoutaiWindow();
 
-        const dashboardData = [etfWindow, hs300Window, chinextWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow, thsWindow, chinamobileWindow, abcbankWindow, sinopecWindow, cnoocWindow, mideaWindow];
+        const dashboardData = [etfWindow, hs300Window, chinextWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow, thsWindow, chinamobileWindow, abcbankWindow, sinopecWindow, cnoocWindow, mideaWindow, moutaiWindow];
 
         renderHtml(dashboardData, DIST_DIR);
         copyEcharts();
@@ -1287,6 +1345,7 @@ async function main() {
                 { id: sinopecWindow.id, stockCode: sinopecWindow.stockCode, buyAlerts: sinopecWindow.buyAlerts, sellAlert: sinopecWindow.sellAlert },
                 { id: cnoocWindow.id, stockCode: cnoocWindow.stockCode, buyAlerts: cnoocWindow.buyAlerts, sellAlert: cnoocWindow.sellAlert },
                 { id: mideaWindow.id, stockCode: mideaWindow.stockCode, buyAlerts: mideaWindow.buyAlerts, sellAlert: mideaWindow.sellAlert },
+                { id: moutaiWindow.id, stockCode: moutaiWindow.stockCode, buyAlerts: moutaiWindow.buyAlerts, sellAlert: moutaiWindow.sellAlert },
             ],
         });
 
