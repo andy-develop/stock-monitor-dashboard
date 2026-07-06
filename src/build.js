@@ -1265,6 +1265,23 @@ async function main() {
 
         const dashboardData = [etfWindow, hs300Window, chinextWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow, thsWindow, chinamobileWindow, abcbankWindow, sinopecWindow, cnoocWindow, mideaWindow, moutaiWindow];
 
+        // 板块归类
+        etfWindow.category = 'ETF';
+        hs300Window.category = 'ETF';
+        chinextWindow.category = 'ETF';
+        greeWindow.category = '股票';
+        shuanghuiWindow.category = '股票';
+        deejWindow.category = '股票';
+        sanquanWindow.category = '股票';
+        shenhuaWindow.category = '股票';
+        thsWindow.category = '股票';
+        chinamobileWindow.category = '股票';
+        abcbankWindow.category = '股票';
+        sinopecWindow.category = '股票';
+        cnoocWindow.category = '股票';
+        mideaWindow.category = '股票';
+        moutaiWindow.category = '股票';
+
         renderHtml(dashboardData, DIST_DIR);
         copyEcharts();
 

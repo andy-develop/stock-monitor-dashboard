@@ -47,6 +47,25 @@
             font-size: 12px;
         }
         .header .meta { text-align: right; color: #888; font-size: 13px; }
+        .category-header {
+            padding-bottom: 18px;
+            margin-bottom: 18px;
+            border-bottom: 1px solid #eee;
+        }
+        .category-header h1 {
+            margin: 0;
+            font-size: 22px;
+            color: #1a1a1a;
+            padding: 10px 14px;
+            border-radius: 8px;
+            display: inline-block;
+            background: #2c3e50;
+            color: #fff;
+            transition: background 0.25s ease;
+        }
+        .category-header h1.danger { background: #c62828; }
+        .window-group { margin-bottom: 20px; }
+        .window-group:last-child { margin-bottom: 0; }
         .signal-card {
             border: 1px solid #eee;
             border-radius: 8px;
@@ -280,54 +299,97 @@
         }
 
         function renderWindow(windowData, index) {
-            const panel = document.createElement('div');
-            panel.className = 'main-panel';
-            panel.innerHTML = `
-                <div class="header">
-                    <div>
-                        <h1>${windowData.stockName} (${windowData.stockCode})</h1>
-                        <p class="subtitle">${windowData.indexName} · 自动化监控${windowData.hint ? `<span class="hint">${windowData.hint}</span>` : ''}</p>
-                    </div>
-                    <div class="meta">
-                        <div>更新时间：${windowData.updateTime}</div>
-                    </div>
-                </div>
+            const buyAlertsHtml = windowData.buyAlerts.map(a => renderAlertCard(a, index)).join('');
+            const sellAlertHtml = windowData.sellAlert
+                ? renderAlertCard(windowData.sellAlert, index)
+                : '<div class="empty-state">暂无信号</div>';
 
-                <div class="signal-card">
-                    <h2 class="signal-title" data-target="buy-list-${index}">
-                        <span>${windowData.buySectionTitle}</span>
-                        <button class="signal-toggle-btn" type="button" data-target="buy-list-${index}">展开</button>
-                    </h2>
-                    <div class="signals-list collapsed" id="buy-list-${index}">
-                        ${windowData.buyAlerts.map(a => renderAlertCard(a, index)).join('')}
+            return `
+                <div class="window-group" data-window-index="${index}">
+                    <div class="header">
+                        <div>
+                            <h1>${windowData.stockName} (${windowData.stockCode})</h1>
+                            <p class="subtitle">${windowData.indexName} · 自动化监控${windowData.hint ? `<span class="hint">${windowData.hint}</span>` : ''}</p>
+                        </div>
+                        <div class="meta">
+                            <div>更新时间：${windowData.updateTime}</div>
+                        </div>
                     </div>
-                </div>
 
-                <div class="signal-card">
-                    <h2 class="signal-title" data-target="sell-list-${index}">
-                        <span>${windowData.sellSectionTitle}</span>
-                        <button class="signal-toggle-btn" type="button" data-target="sell-list-${index}">展开</button>
-                    </h2>
-                    <div class="signals-list collapsed" id="sell-list-${index}">
-                        ${windowData.sellAlert ? renderAlertCard(windowData.sellAlert, index) : '<div class="empty-state">暂无信号</div>'}
+                    <div class="signal-card">
+                        <h2 class="signal-title" data-target="buy-list-${index}">
+                            <span>${windowData.buySectionTitle}</span>
+                            <button class="signal-toggle-btn" type="button" data-target="buy-list-${index}">展开</button>
+                        </h2>
+                        <div class="signals-list collapsed" id="buy-list-${index}">
+                            ${buyAlertsHtml}
+                        </div>
+                    </div>
+
+                    <div class="signal-card">
+                        <h2 class="signal-title" data-target="sell-list-${index}">
+                            <span>${windowData.sellSectionTitle}</span>
+                            <button class="signal-toggle-btn" type="button" data-target="sell-list-${index}">展开</button>
+                        </h2>
+                        <div class="signals-list collapsed" id="sell-list-${index}">
+                            ${sellAlertHtml}
+                        </div>
                     </div>
                 </div>
             `;
+        }
+
+        function renderCategory(category, windows) {
+            const windowsHtml = windows.map((w, i) => {
+                const html = renderWindow(w, w._index);
+                return i < windows.length - 1 ? html + '<div class="section-divider"></div>' : html;
+            }).join('');
+
+            const panel = document.createElement('div');
+            panel.className = 'main-panel';
+            panel.innerHTML = `
+                <div class="category-header">
+                    <h1>${category}板块</h1>
+                </div>
+                ${windowsHtml}
+            `;
             container.appendChild(panel);
 
-            // 标题颜色联动
+            // 板块标题颜色联动
+            const hasDanger = panel.querySelector('.alert-danger') !== null
+                || panel.querySelector('.alert-warning') !== null;
+            const categoryTitle = panel.querySelector('.category-header h1');
+            if (hasDanger) {
+                categoryTitle.classList.add('danger');
+            }
+        }
+
+        // 按板块分组渲染
+        const categories = {};
+        windows.forEach((w, i) => {
+            w._index = i;
+            const category = w.category || '其他';
+            if (!categories[category]) categories[category] = [];
+            categories[category].push(w);
+        });
+
+        Object.entries(categories).forEach(([category, catWindows]) => {
+            renderCategory(category, catWindows);
+        });
+
+        // 单个窗口标题颜色联动
+        windows.forEach((w, i) => {
             ['buy-list', 'sell-list'].forEach(kind => {
-                const list = document.getElementById(`${kind}-${index}`);
-                const title = document.querySelector(`.signal-title[data-target="${kind}-${index}"]`);
+                const list = document.getElementById(`${kind}-${i}`);
+                const title = document.querySelector(`.window-group[data-window-index="${i}"] .signal-title[data-target="${kind}-${i}"]`);
+                if (!list || !title) return;
                 const hasDanger = list.querySelector('.alert-danger') !== null
                     || list.querySelector('.alert-warning') !== null;
                 if (hasDanger) {
                     title.classList.add('danger');
                 }
             });
-        }
-
-        windows.forEach((w, i) => renderWindow(w, i));
+        });
 
         // 图表初始化函数
         function initEtfWeekChart(windowIndex, data) {
