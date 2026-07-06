@@ -7,6 +7,7 @@ const { getKlinesWithCache, saveLastRun } = require('./fetcher');
 const {
     calculateKDJ,
     calculateAdaptiveMonthlyMA,
+    calculateEstimatedMA60,
     calculateBOLL,
     calculateRSI,
     calculateMA,
@@ -278,7 +279,7 @@ function evaluateChiNextBuySignals({ monthKlines, ma60, boll }) {
 /**
  * 月线 MA60 + 周线 BOLL 下轨买入信号评估（月K线低于MA60 + 周K线下穿布林下轨）
  */
-function evaluateMonthMA60WeekBollBuySignals({ stockName, monthKlines, ma60, weekKlines, weekBoll }) {
+function evaluateMonthMA60WeekBollBuySignals({ stockName, monthKlines, ma60, weekKlines, weekBoll, estimated = false, estimatedAvgFirstYear = null }) {
     const latestMonthIndex = monthKlines.length - 1;
     const latestMonthClose = monthKlines[latestMonthIndex].close;
     const latestMA60 = ma60[latestMonthIndex];
@@ -287,6 +288,7 @@ function evaluateMonthMA60WeekBollBuySignals({ stockName, monthKlines, ma60, wee
     const latestWeekClose = weekKlines[latestWeekIndex].close;
     const latestWeekLower = weekBoll.lower[latestWeekIndex];
 
+    const maSuffix = estimated ? '（估算）' : '';
     const maAvailable = latestMA60 !== null && latestMA60 !== 0;
     const conditionMA = maAvailable && latestMonthClose < latestMA60;
     const conditionBoll = latestWeekClose < latestWeekLower;
@@ -295,14 +297,14 @@ function evaluateMonthMA60WeekBollBuySignals({ stockName, monthKlines, ma60, wee
     let title;
     let reason;
     if (triggered) {
-        title = '⚠️ 买入信号：月K低于MA60且周K下穿布林下轨';
-        reason = `当前${stockName}月线收盘价 ${latestMonthClose} 低于 MA60（${latestMA60}），且周线收盘价 ${latestWeekClose} 跌破 BOLL(20,2) 下轨（${latestWeekLower}），双条件同时满足，建议关注买入机会。`;
+        title = `⚠️ 买入信号：月K低于MA60${maSuffix}且周K下穿布林下轨`;
+        reason = `当前${stockName}月线收盘价 ${latestMonthClose} 低于 MA60${maSuffix}（${latestMA60}）${estimated && estimatedAvgFirstYear !== null ? `，MA60 用上市首年 12 个月均价 ${estimatedAvgFirstYear} 线性外推估算` : ''}，且周线收盘价 ${latestWeekClose} 跌破 BOLL(20,2) 下轨（${latestWeekLower}），双条件同时满足，建议关注买入机会。`;
     } else {
         title = '✅ 暂无买入信号';
         const maText = maAvailable
             ? (latestMonthClose < latestMA60 ? '低于 MA60' : `高于 MA60 ${((latestMonthClose - latestMA60) / latestMA60 * 100).toFixed(2)}%`)
             : '数据不足';
-        reason = `当前${stockName}月线收盘价 ${latestMonthClose}，MA60 ${maAvailable ? latestMA60 : '数据不足'}（${maText}）；周线收盘价 ${latestWeekClose}，BOLL(20,2) 下轨 ${latestWeekLower}。未同时满足“月K线低于MA60”且“周K线下穿布林下轨”。`;
+        reason = `当前${stockName}月线收盘价 ${latestMonthClose}，MA60${maSuffix} ${maAvailable ? latestMA60 : '数据不足'}（${maText}）${estimated && estimatedAvgFirstYear !== null ? `，MA60 用上市首年 12 个月均价 ${estimatedAvgFirstYear} 线性外推估算` : ''}；周线收盘价 ${latestWeekClose}，BOLL(20,2) 下轨 ${latestWeekLower}。未同时满足“月K线低于MA60”且“周K线下穿布林下轨”。`;
     }
 
     return {
@@ -313,17 +315,19 @@ function evaluateMonthMA60WeekBollBuySignals({ stockName, monthKlines, ma60, wee
             chartKeys: ['month', 'boll'],
             metrics: [
                 { label: '最新月收盘价', value: latestMonthClose },
-                { label: 'MA60', value: maAvailable ? latestMA60 : '数据不足' },
+                { label: `MA60${maSuffix}`, value: maAvailable ? latestMA60 : '数据不足' },
                 { label: '最新周收盘价', value: latestWeekClose },
                 { label: '周 BOLL(20,2) 下轨', value: latestWeekLower },
             ],
             reason,
             signalDetails: [
-                { label: '月K线收盘价 < MA60', triggered: conditionMA, value: `收盘 ${latestMonthClose} / MA60 ${latestMA60}` },
+                { label: `月K线收盘价 < MA60${maSuffix}`, triggered: conditionMA, value: `收盘 ${latestMonthClose} / MA60 ${latestMA60}` },
                 { label: '周K线收盘价 < BOLL 下轨', triggered: conditionBoll, value: `收盘 ${latestWeekClose} / 下轨 ${latestWeekLower}` },
             ],
         },
         ma60,
+        estimated,
+        estimatedAvgFirstYear,
         weekBollData: { upper: weekBoll.upper, middle: weekBoll.middle, lower: weekBoll.lower },
     };
 }
@@ -908,43 +912,7 @@ async function buildChinaMobileWindow() {
 
     const displayLimit = 100;
     const weekBoll = calculateBOLL(weekKlines, 20, 2);
-
-    // 月线不足 60 条时无法计算 MA60，买入信号暂不显示
-    if (monthKlines.length < 60) {
-        return {
-            id: 'chinamobile',
-            stockName: name,
-            stockCode: code,
-            indexName,
-            updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
-            buySectionTitle: '买入信号',
-            sellSectionTitle: '卖出信号',
-            buyAlerts: [{
-                type: 'yellow',
-                title: '⏸️ 买入信号待启用',
-                chartKeys: [],
-                metrics: [
-                    { label: '当前月线数据条数', value: monthKlines.length },
-                    { label: '所需月线数据条数', value: 60 },
-                ],
-                reason: `中国移动上市时间较短，当前月线数据仅 ${monthKlines.length} 条，不足 60 条，暂无法计算 MA60。当数据满足 60 个月后将自动显示买入信号。`,
-            }],
-            sellAlert: null,
-            weekData: {
-                dates: weekKlines.slice(-displayLimit).map((k) => k.date),
-                candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
-            },
-            bollData: {
-                dates: weekKlines.slice(-displayLimit).map((k) => k.date),
-                candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
-                upper: weekBoll.upper.slice(-displayLimit),
-                middle: weekBoll.middle.slice(-displayLimit),
-                lower: weekBoll.lower.slice(-displayLimit),
-            },
-        };
-    }
-
-    const ma60Month = calculateMA(monthKlines, 60);
+    const { ma: ma60Month, estimated, avgFirstYear } = calculateEstimatedMA60(monthKlines);
 
     const buySignalResult = evaluateMonthMA60WeekBollBuySignals({
         stockName: name,
@@ -952,6 +920,8 @@ async function buildChinaMobileWindow() {
         ma60: ma60Month,
         weekKlines,
         weekBoll,
+        estimated,
+        estimatedAvgFirstYear: avgFirstYear,
     });
 
     return {
@@ -973,6 +943,8 @@ async function buildChinaMobileWindow() {
             closes: monthKlines.slice(-displayLimit).map((k) => k.close),
             ma: ma60Month.slice(-displayLimit),
             maPeriod: 60,
+            estimated,
+            estimatedAvgFirstYear: avgFirstYear,
         },
         bollData: {
             dates: weekKlines.slice(-displayLimit).map((k) => k.date),
@@ -1114,43 +1086,7 @@ async function buildCnoocWindow() {
 
     const displayLimit = 100;
     const weekBoll = calculateBOLL(weekKlines, 20, 2);
-
-    // 月线不足 60 条时无法计算 MA60，买入信号暂不显示
-    if (monthKlines.length < 60) {
-        return {
-            id: 'cnooc',
-            stockName: name,
-            stockCode: code,
-            indexName,
-            updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
-            buySectionTitle: '买入信号',
-            sellSectionTitle: '卖出信号',
-            buyAlerts: [{
-                type: 'yellow',
-                title: '⏸️ 买入信号待启用',
-                chartKeys: [],
-                metrics: [
-                    { label: '当前月线数据条数', value: monthKlines.length },
-                    { label: '所需月线数据条数', value: 60 },
-                ],
-                reason: `中国海油上市时间较短，当前月线数据仅 ${monthKlines.length} 条，不足 60 条，暂无法计算 MA60。当数据满足 60 个月后将自动显示买入信号。`,
-            }],
-            sellAlert: null,
-            weekData: {
-                dates: weekKlines.slice(-displayLimit).map((k) => k.date),
-                candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
-            },
-            bollData: {
-                dates: weekKlines.slice(-displayLimit).map((k) => k.date),
-                candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
-                upper: weekBoll.upper.slice(-displayLimit),
-                middle: weekBoll.middle.slice(-displayLimit),
-                lower: weekBoll.lower.slice(-displayLimit),
-            },
-        };
-    }
-
-    const ma60Month = calculateMA(monthKlines, 60);
+    const { ma: ma60Month, estimated, avgFirstYear } = calculateEstimatedMA60(monthKlines);
 
     const buySignalResult = evaluateMonthMA60WeekBollBuySignals({
         stockName: name,
@@ -1158,6 +1094,8 @@ async function buildCnoocWindow() {
         ma60: ma60Month,
         weekKlines,
         weekBoll,
+        estimated,
+        estimatedAvgFirstYear: avgFirstYear,
     });
 
     return {
@@ -1179,6 +1117,8 @@ async function buildCnoocWindow() {
             closes: monthKlines.slice(-displayLimit).map((k) => k.close),
             ma: ma60Month.slice(-displayLimit),
             maPeriod: 60,
+            estimated,
+            estimatedAvgFirstYear: avgFirstYear,
         },
         bollData: {
             dates: weekKlines.slice(-displayLimit).map((k) => k.date),

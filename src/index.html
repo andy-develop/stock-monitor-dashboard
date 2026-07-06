@@ -364,13 +364,15 @@
 
         function initEtfMonthChart(windowIndex, data) {
             const chart = echarts.init(document.getElementById(`chart-${windowIndex}-month`));
+            const maEstimated = data.monthData && data.monthData.estimated;
+            const maNameSuffix = maEstimated ? '（估算）' : '';
             const series = [
                 { name: '收盘价', type: 'line', data: data.monthData.closes, showSymbol: false, itemStyle: { color: '#3277c9' }, areaStyle: { opacity: 0.1 } }
             ];
             const legend = ['收盘价'];
             if (data.monthData.maPeriod) {
-                series.push({ name: `MA${data.monthData.maPeriod}`, type: 'line', data: data.monthData.ma, showSymbol: false, itemStyle: { color: '#e0a926' } });
-                legend.push(`MA${data.monthData.maPeriod}`);
+                series.push({ name: `MA${data.monthData.maPeriod}${maNameSuffix}`, type: 'line', data: data.monthData.ma, showSymbol: false, itemStyle: { color: '#e0a926' } });
+                legend.push(`MA${data.monthData.maPeriod}${maNameSuffix}`);
             }
             chart.setOption({
                 tooltip: { trigger: 'axis' },

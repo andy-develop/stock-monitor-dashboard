@@ -87,6 +87,45 @@ function calculateAdaptiveMonthlyMA(monthKlines) {
     return { period, ma: calculateMA(monthKlines, period) };
 }
 
+/**
+ * 计算月线 MA60；数据不足 60 个月时，用上市首年 12 个月收盘价均值
+ * 向前填充缺失月份，进行线性外推估算。
+ * @param {Array<{close: number, date: string}>} monthKlines
+ * @returns {{ma: (number|null)[], estimated: boolean, avgFirstYear: number|null}}
+ */
+function calculateEstimatedMA60(monthKlines) {
+    if (!Array.isArray(monthKlines) || monthKlines.length === 0) {
+        return { ma: [], estimated: false, avgFirstYear: null };
+    }
+
+    const realLength = monthKlines.length;
+    if (realLength >= 60) {
+        return { ma: calculateMA(monthKlines, 60), estimated: false, avgFirstYear: null };
+    }
+
+    const firstYearCount = Math.min(12, realLength);
+    const firstYearKlines = monthKlines.slice(0, firstYearCount);
+    const avgFirstYear = Number(
+        (firstYearKlines.reduce((sum, k) => sum + k.close, 0) / firstYearCount).toFixed(3)
+    );
+
+    const missingCount = 60 - realLength;
+    const paddedKlines = [];
+    for (let i = 0; i < missingCount; i += 1) {
+        paddedKlines.push({ close: avgFirstYear, date: '估算' });
+    }
+    paddedKlines.push(...monthKlines);
+
+    const maPadded = calculateMA(paddedKlines, 60);
+    const latestMA = maPadded[maPadded.length - 1];
+
+    // 返回与真实 K 线对齐的 MA 数组，仅最新月份有值
+    const ma = new Array(realLength).fill(null);
+    ma[realLength - 1] = latestMA;
+
+    return { ma, estimated: true, avgFirstYear };
+}
+
 
 /**
  * 计算 BOLL(20,2)
@@ -281,6 +320,7 @@ module.exports = {
     calculateKDJ,
     calculateMA,
     calculateAdaptiveMonthlyMA,
+    calculateEstimatedMA60,
     calculateBOLL,
     calculateRSI,
     calculatePeriodHigh,
