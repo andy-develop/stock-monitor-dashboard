@@ -48,22 +48,38 @@
         }
         .header .meta { text-align: right; color: #888; font-size: 13px; }
         .category-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             padding-bottom: 18px;
             margin-bottom: 18px;
             border-bottom: 1px solid #eee;
+            cursor: pointer;
+            user-select: none;
         }
         .category-header h1 {
             margin: 0;
             font-size: 22px;
-            color: #1a1a1a;
+            color: #fff;
             padding: 10px 14px;
             border-radius: 8px;
             display: inline-block;
             background: #2c3e50;
-            color: #fff;
             transition: background 0.25s ease;
         }
         .category-header h1.danger { background: #c62828; }
+        .category-content {
+            overflow: hidden;
+            transition: max-height 0.45s ease, opacity 0.25s ease;
+        }
+        .category-content.collapsed {
+            max-height: 0;
+            opacity: 0;
+        }
+        .category-content.expanded {
+            max-height: 20000px;
+            opacity: 1;
+        }
         .window-group { margin-bottom: 20px; }
         .window-group:last-child { margin-bottom: 0; }
         .signal-card {
@@ -339,7 +355,8 @@
             `;
         }
 
-        function renderCategory(category, windows) {
+        function renderCategory(category, windows, categoryIndex) {
+            const contentId = `category-content-${categoryIndex}`;
             const windowsHtml = windows.map((w, i) => {
                 const html = renderWindow(w, w._index);
                 return i < windows.length - 1 ? html + '<div class="section-divider"></div>' : html;
@@ -348,10 +365,13 @@
             const panel = document.createElement('div');
             panel.className = 'main-panel';
             panel.innerHTML = `
-                <div class="category-header">
+                <div class="category-header" data-target="${contentId}">
                     <h1>${category}板块</h1>
+                    <button class="signal-toggle-btn" type="button" data-target="${contentId}">展开</button>
                 </div>
-                ${windowsHtml}
+                <div class="category-content collapsed" id="${contentId}">
+                    ${windowsHtml}
+                </div>
             `;
             container.appendChild(panel);
 
@@ -373,8 +393,8 @@
             categories[category].push(w);
         });
 
-        Object.entries(categories).forEach(([category, catWindows]) => {
-            renderCategory(category, catWindows);
+        Object.entries(categories).forEach(([category, catWindows], categoryIndex) => {
+            renderCategory(category, catWindows, categoryIndex);
         });
 
         // 单个窗口标题颜色联动
@@ -579,6 +599,29 @@
             if (chart) chartInstances[key] = chart;
             return chart;
         }
+
+        // 板块折叠/展开交互
+        document.querySelectorAll('.category-header, .category-header .signal-toggle-btn').forEach(el => {
+            el.addEventListener('click', (e) => {
+                if (e.target.classList.contains('signal-toggle-btn')) {
+                    e.stopPropagation();
+                }
+                const targetId = el.getAttribute('data-target');
+                const panel = document.getElementById(targetId);
+                const btn = document.querySelector(`.category-header .signal-toggle-btn[data-target="${targetId}"]`);
+                const isCollapsed = panel.classList.contains('collapsed');
+
+                if (isCollapsed) {
+                    panel.classList.remove('collapsed');
+                    panel.classList.add('expanded');
+                    btn.innerText = '收起';
+                } else {
+                    panel.classList.remove('expanded');
+                    panel.classList.add('collapsed');
+                    btn.innerText = '展开';
+                }
+            });
+        });
 
         // 大卡片折叠/展开交互
         document.querySelectorAll('.signal-title, .signal-toggle-btn').forEach(el => {
