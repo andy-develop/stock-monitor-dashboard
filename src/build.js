@@ -546,13 +546,14 @@ function evaluateTrendMonitoring({ dayKlines, ma60 }) {
     };
 }
 
-const WEEKLY_DEVIATION_YEARS = 10;
-const WEEKLY_DEVIATION_WEEKS = 52 * WEEKLY_DEVIATION_YEARS;
+const DAILY_DEVIATION_YEARS = 10;
+const DAILY_DEVIATION_DAYS = 252 * DAILY_DEVIATION_YEARS;
+const DAILY_KLINE_FETCH_COUNT = 2700;
 const WEEKLY_KLINE_FETCH_COUNT = 550;
 
-function buildWeeklyDeviationMonitoring(weekKlines) {
-    const seriesKlines = weekKlines.slice(-WEEKLY_DEVIATION_WEEKS);
-    const ma60Week = calculateMA(seriesKlines, 60);
+function buildDailyDeviationMonitoring(dayKlines) {
+    const seriesKlines = dayKlines.slice(-DAILY_DEVIATION_DAYS);
+    const ma60Day = calculateMA(seriesKlines, 60);
     const deviationRatio = calculatePriceMADeviationRatio(seriesKlines, 60);
     const deviationPct = deviationRatio.map((value) => (
         value === null ? null : Number((value * 100).toFixed(2))
@@ -560,15 +561,14 @@ function buildWeeklyDeviationMonitoring(weekKlines) {
 
     const latestIndex = seriesKlines.length - 1;
     const latestClose = seriesKlines[latestIndex]?.close ?? null;
-    const latestMA60 = ma60Week[latestIndex] ?? null;
-    const latestDeviationRatio = deviationRatio[latestIndex];
+    const latestMA60 = ma60Day[latestIndex] ?? null;
     const latestDeviationPct = deviationPct[latestIndex];
 
     const monitor = evaluateDeviationMonitoring({
         latestClose,
         latestMA60,
         latestDeviationPct,
-        historyWeeks: seriesKlines.length,
+        historyDays: seriesKlines.length,
     });
 
     return {
@@ -585,27 +585,30 @@ function evaluateDeviationMonitoring({
     latestClose,
     latestMA60,
     latestDeviationPct,
-    historyWeeks,
+    historyDays,
 }) {
     const maAvailable = latestMA60 !== null && latestMA60 !== 0;
     const deviationPct = latestDeviationPct !== null && latestDeviationPct !== undefined
         ? `${latestDeviationPct.toFixed(2)}%`
         : '数据不足';
+    const historyLabel = historyDays >= DAILY_DEVIATION_DAYS
+        ? `近 ${DAILY_DEVIATION_YEARS} 年（${historyDays} 个交易日）`
+        : `${historyDays} 个交易日（上市不足 ${DAILY_DEVIATION_YEARS} 年）`;
     return {
         alert: {
             type: 'success',
-            title: '📏 偏离度监控（周K · 价格/MA60 - 1）',
+            title: '📏 偏离度监控（日K · 价格/MA60 - 1）',
             chartKeys: ['deviation'],
             metrics: [
-                { label: '最新周收盘价', value: latestClose },
-                { label: '最新周 MA60', value: maAvailable ? latestMA60 : '数据不足' },
+                { label: '最新日收盘价', value: latestClose },
+                { label: '最新日 MA60', value: maAvailable ? latestMA60 : '数据不足' },
                 { label: '当前偏离度', value: deviationPct },
-                { label: '历史跨度', value: `${historyWeeks} 周（约 ${WEEKLY_DEVIATION_YEARS} 年）` },
+                { label: '历史跨度', value: historyLabel },
                 { label: '参考极值', value: '±30% / ±20%（2015 年创业板 +30%）' },
             ],
             reason: maAvailable
-                ? `基于周K线计算近 ${WEEKLY_DEVIATION_YEARS} 年偏离度曲线（价格 / MA60 - 1），当前值为 ${deviationPct}。图表含 ±30% 与 ±20% 参考虚线；标注：2015 年创业板最大偏离度是 +30%。`
-                : '周K线数据不足，无法计算偏离度。',
+                ? `基于日K线计算近 ${DAILY_DEVIATION_YEARS} 年偏离度曲线（价格 / 日MA60 - 1），当前值为 ${deviationPct}。图表含 ±30% 与 ±20% 参考虚线；标注：2015 年创业板最大偏离度是 +30%。`
+                : '日K线数据不足，无法计算偏离度。',
         },
     };
 }
@@ -618,7 +621,7 @@ async function buildEtfWindow() {
     console.log(`开始获取 ${name} (${code}) 数据...`);
     const weekKlines = await getKlinesWithCache(code, 'week', WEEKLY_KLINE_FETCH_COUNT);
     const monthKlines = await getKlinesWithCache(code, 'month', 100);
-    const dayKlines = await getKlinesWithCache(code, 'day', 300);
+    const dayKlines = await getKlinesWithCache(code, 'day', DAILY_KLINE_FETCH_COUNT);
     console.log(`  周线数据：${weekKlines.length} 条`);
     console.log(`  月线数据：${monthKlines.length} 条`);
     console.log(`  日线数据：${dayKlines.length} 条`);
@@ -650,7 +653,7 @@ async function buildEtfWindow() {
         rsi: rsiResult,
     });
     const trendMonitor = evaluateTrendMonitoring({ dayKlines, ma60: ma60Day });
-    const deviationMonitor = buildWeeklyDeviationMonitoring(weekKlines);
+    const deviationMonitor = buildDailyDeviationMonitoring(dayKlines);
 
     const displayLimit = 100;
 
@@ -704,7 +707,7 @@ async function buildHs300Window() {
     console.log(`开始获取 ${name} (${code}) 数据...`);
     const weekKlines = await getKlinesWithCache(code, 'week', WEEKLY_KLINE_FETCH_COUNT);
     const monthKlines = await getKlinesWithCache(code, 'month', 100);
-    const dayKlines = await getKlinesWithCache(code, 'day', 300);
+    const dayKlines = await getKlinesWithCache(code, 'day', DAILY_KLINE_FETCH_COUNT);
     console.log(`  周线数据：${weekKlines.length} 条`);
     console.log(`  月线数据：${monthKlines.length} 条`);
     console.log(`  日线数据：${dayKlines.length} 条`);
@@ -737,7 +740,7 @@ async function buildHs300Window() {
         dayMA60: ma60Day,
     });
     const trendMonitor = evaluateTrendMonitoring({ dayKlines, ma60: ma60Day });
-    const deviationMonitor = buildWeeklyDeviationMonitoring(weekKlines);
+    const deviationMonitor = buildDailyDeviationMonitoring(dayKlines);
 
     const displayLimit = 100;
 
@@ -802,7 +805,7 @@ async function buildChiNextWindow() {
     console.log(`开始获取 ${name} (${code}) 数据...`);
     const weekKlines = await getKlinesWithCache(code, 'week', WEEKLY_KLINE_FETCH_COUNT);
     const monthKlines = await getKlinesWithCache(code, 'month', 100);
-    const dayKlines = await getKlinesWithCache(code, 'day', 300);
+    const dayKlines = await getKlinesWithCache(code, 'day', DAILY_KLINE_FETCH_COUNT);
     console.log(`  周线数据：${weekKlines.length} 条`);
     console.log(`  月线数据：${monthKlines.length} 条`);
     console.log(`  日线数据：${dayKlines.length} 条`);
@@ -833,7 +836,7 @@ async function buildChiNextWindow() {
         dayMA60: ma60Day,
     });
     const trendMonitor = evaluateTrendMonitoring({ dayKlines, ma60: ma60Day });
-    const deviationMonitor = buildWeeklyDeviationMonitoring(weekKlines);
+    const deviationMonitor = buildDailyDeviationMonitoring(dayKlines);
 
     const displayLimit = 100;
 
@@ -887,7 +890,7 @@ async function buildConsumerWindow({ id, code, name, thresholds, valueHint, hint
     const indexName = '消费类股票';
 
     console.log(`开始获取 ${name} (${code}) 数据...`);
-    const dayKlines = await getKlinesWithCache(code, 'day', 300);
+    const dayKlines = await getKlinesWithCache(code, 'day', DAILY_KLINE_FETCH_COUNT);
     console.log(`  日线数据：${dayKlines.length} 条`);
 
     if (dayKlines.length < 30) throw new Error('日线数据不足，无法计算均线');
