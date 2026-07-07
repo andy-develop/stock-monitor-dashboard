@@ -576,7 +576,7 @@ function buildWeeklyDeviationMonitoring(weekKlines) {
         deviationData: {
             dates: seriesKlines.map((k) => k.date),
             values: deviationPct,
-            referenceLine: 30,
+            referenceLines: [30, 20, -20, -30],
         },
     };
 }
@@ -601,10 +601,10 @@ function evaluateDeviationMonitoring({
                 { label: '最新周 MA60', value: maAvailable ? latestMA60 : '数据不足' },
                 { label: '当前偏离度', value: deviationPct },
                 { label: '历史跨度', value: `${historyWeeks} 周（约 ${WEEKLY_DEVIATION_YEARS} 年）` },
-                { label: '参考极值', value: '+30%（2015 年创业板）' },
+                { label: '参考极值', value: '±30% / ±20%（2015 年创业板 +30%）' },
             ],
             reason: maAvailable
-                ? `基于周K线计算近 ${WEEKLY_DEVIATION_YEARS} 年偏离度曲线（价格 / MA60 - 1），当前值为 ${deviationPct}。标注：2015 年创业板最大偏离度是 +30%。`
+                ? `基于周K线计算近 ${WEEKLY_DEVIATION_YEARS} 年偏离度曲线（价格 / MA60 - 1），当前值为 ${deviationPct}。图表含 ±30% 与 ±20% 参考虚线；标注：2015 年创业板最大偏离度是 +30%。`
                 : '周K线数据不足，无法计算偏离度。',
         },
     };
