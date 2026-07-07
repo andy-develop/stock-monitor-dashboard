@@ -4,11 +4,13 @@
 const fs = require('fs');
 const path = require('path');
 const { stocks } = require('stock-api');
+const { normalizeFundSplitKlines } = require('./fund-split');
 
 const DATA_DIR = path.join(__dirname, '../data');
 const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
 const LAST_RUN_FILE = path.join(DATA_DIR, 'last-run.json');
 const KLINE_ADJUST = 'qfq';
+const KLINE_CACHE_VERSION = 'v2';
 
 function ensureDataDir() {
     if (!fs.existsSync(DATA_DIR)) {
@@ -67,7 +69,7 @@ function validateKlines(klines, label, maxStalenessDays = 7) {
  * @returns {Promise<Array>}
  */
 async function getKlinesWithCache(code, period, count = 200) {
-    const cacheKey = `${code}_${period}_${KLINE_ADJUST}`;
+    const cacheKey = `${code}_${period}_${KLINE_ADJUST}_${KLINE_CACHE_VERSION}`;
     const cache = readJson(HISTORY_FILE, {});
     const cachedKlines = cache[cacheKey] || [];
 
@@ -92,11 +94,12 @@ async function getKlinesWithCache(code, period, count = 200) {
     const merged = Array.from(mergedMap.values()).sort(
         (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
     );
+    const normalized = normalizeFundSplitKlines(code, merged);
 
-    cache[cacheKey] = merged;
+    cache[cacheKey] = normalized;
     writeJson(HISTORY_FILE, cache);
 
-    return merged;
+    return normalized;
 }
 
 function loadLastRun() {
