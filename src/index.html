@@ -315,10 +315,51 @@
         }
 
         function renderWindow(windowData, index) {
-            const buyAlertsHtml = windowData.buyAlerts.map(a => renderAlertCard(a, index)).join('');
-            const sellAlertHtml = windowData.sellAlert
-                ? renderAlertCard(windowData.sellAlert, index)
-                : '<div class="empty-state">暂无信号</div>';
+            const sections = [
+                {
+                    key: 'buy',
+                    title: windowData.buySectionTitle,
+                    alerts: windowData.buyAlerts || [],
+                },
+                {
+                    key: 'sell',
+                    title: windowData.sellSectionTitle,
+                    alerts: windowData.sellAlert ? [windowData.sellAlert] : [],
+                },
+            ];
+
+            if (windowData.trendSectionTitle) {
+                sections.push({
+                    key: 'trend',
+                    title: windowData.trendSectionTitle,
+                    alerts: windowData.trendAlerts || [],
+                });
+            }
+            if (windowData.deviationSectionTitle) {
+                sections.push({
+                    key: 'deviation',
+                    title: windowData.deviationSectionTitle,
+                    alerts: windowData.deviationAlerts || [],
+                });
+            }
+
+            const sectionsHtml = sections.map(section => {
+                const listId = `${section.key}-list-${index}`;
+                const alertsHtml = section.alerts.length > 0
+                    ? section.alerts.map(a => renderAlertCard(a, index)).join('')
+                    : '<div class="empty-state">暂无信号</div>';
+                return `
+                    <div class="signal-card">
+                        <h2 class="signal-title" data-target="${listId}">
+                            <span>${section.title}</span>
+                            <button class="signal-toggle-btn" type="button" data-target="${listId}">展开</button>
+                        </h2>
+                        <div class="signals-list collapsed" id="${listId}">
+                            ${alertsHtml}
+                        </div>
+                    </div>
+                `;
+            }).join('');
 
             return `
                 <div class="window-group" data-window-index="${index}">
@@ -332,25 +373,7 @@
                         </div>
                     </div>
 
-                    <div class="signal-card">
-                        <h2 class="signal-title" data-target="buy-list-${index}">
-                            <span>${windowData.buySectionTitle}</span>
-                            <button class="signal-toggle-btn" type="button" data-target="buy-list-${index}">展开</button>
-                        </h2>
-                        <div class="signals-list collapsed" id="buy-list-${index}">
-                            ${buyAlertsHtml}
-                        </div>
-                    </div>
-
-                    <div class="signal-card">
-                        <h2 class="signal-title" data-target="sell-list-${index}">
-                            <span>${windowData.sellSectionTitle}</span>
-                            <button class="signal-toggle-btn" type="button" data-target="sell-list-${index}">展开</button>
-                        </h2>
-                        <div class="signals-list collapsed" id="sell-list-${index}">
-                            ${sellAlertHtml}
-                        </div>
-                    </div>
+                    ${sectionsHtml}
                 </div>
             `;
         }
@@ -399,9 +422,10 @@
 
         // 单个窗口标题颜色联动
         windows.forEach((w, i) => {
-            ['buy-list', 'sell-list'].forEach(kind => {
-                const list = document.getElementById(`${kind}-${i}`);
-                const title = document.querySelector(`.window-group[data-window-index="${i}"] .signal-title[data-target="${kind}-${i}"]`);
+            ['buy-list', 'sell-list', 'trend-list', 'deviation-list'].forEach(kind => {
+                const targetId = `${kind}-${i}`;
+                const list = document.getElementById(targetId);
+                const title = document.querySelector(`.window-group[data-window-index="${i}"] .signal-title[data-target="${targetId}"]`);
                 if (!list || !title) return;
                 const hasDanger = list.querySelector('.alert-danger') !== null
                     || list.querySelector('.alert-warning') !== null;
