@@ -247,6 +247,20 @@ function calculatePriceMADeviation(klines, period) {
 }
 
 /**
+ * 计算价格相对 MA 的偏离度比率：收盘价 / MA - 1
+ * @param {Array<{close: number}>} klines
+ * @param {number} period
+ * @returns {(number|null)[]}
+ */
+function calculatePriceMADeviationRatio(klines, period) {
+    const ma = calculateMA(klines, period);
+    return ma.map((m, i) => {
+        if (m === null || m === 0) return null;
+        return Number((klines[i].close / m - 1).toFixed(4));
+    });
+}
+
+/**
  * 计算两条 MA 之间的偏离度
  * @param {Array<{close: number}>} klines
  * @param {number} shortPeriod
@@ -325,6 +339,7 @@ module.exports = {
     calculateRSI,
     calculatePeriodHigh,
     calculatePriceMADeviation,
+    calculatePriceMADeviationRatio,
     calculateMADeviation,
     detectMomentumExhaustion,
     detectMomentumExhaustionDetails,
