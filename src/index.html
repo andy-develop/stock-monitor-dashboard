@@ -280,6 +280,7 @@
                 monthKdj: '月K线及 KDJ(9,3,3) 联动趋势图',
                 boll: '周K线及 BOLL(20,2) 趋势图',
                 rsi: '周K线 RSI(6) 趋势图',
+                deviation: '近10年偏离度曲线（周K · 价格/MA60 - 1）',
                 day: '日K线及 MA5 / MA20 / 10日高点 趋势图',
             };
             return chartKeys.map(key => {
@@ -587,6 +588,45 @@
             return chart;
         }
 
+        function initDeviationChart(windowIndex, data) {
+            const chart = echarts.init(document.getElementById(`chart-${windowIndex}-deviation`));
+            const deviationData = data.deviationData || { dates: [], values: [], referenceLine: 30 };
+            chart.setOption({
+                tooltip: {
+                    trigger: 'axis',
+                    valueFormatter: (value) => (value === null || value === undefined ? '-' : `${value}%`),
+                },
+                legend: { data: ['偏离度', '参考线 +30%'], top: 0 },
+                xAxis: { type: 'category', data: deviationData.dates },
+                yAxis: {
+                    scale: true,
+                    splitArea: { show: true },
+                    axisLabel: { formatter: '{value}%' },
+                },
+                dataZoom: [{ type: 'inside', start: 0, end: 100 }],
+                series: [
+                    {
+                        name: '偏离度',
+                        type: 'line',
+                        data: deviationData.values,
+                        showSymbol: false,
+                        smooth: true,
+                        itemStyle: { color: '#3277c9' },
+                        areaStyle: { opacity: 0.08 },
+                    },
+                    {
+                        name: '参考线 +30%',
+                        type: 'line',
+                        data: deviationData.dates.map(() => deviationData.referenceLine),
+                        showSymbol: false,
+                        itemStyle: { color: '#ff9800' },
+                        lineStyle: { type: 'dashed' },
+                    },
+                ],
+            });
+            return chart;
+        }
+
         function initGreeDayChart(windowIndex, data) {
             const chart = echarts.init(document.getElementById(`chart-${windowIndex}-day`));
             chart.setOption({
@@ -619,6 +659,7 @@
             else if (chartKey === 'monthKdj') chart = initEtfMonthKdjChart(windowIndex, data);
             else if (chartKey === 'boll') chart = initEtfBollChart(windowIndex, data);
             else if (chartKey === 'rsi') chart = initEtfRsiChart(windowIndex, data);
+            else if (chartKey === 'deviation') chart = initDeviationChart(windowIndex, data);
             else if (chartKey === 'day') chart = initGreeDayChart(windowIndex, data);
             if (chart) chartInstances[key] = chart;
             return chart;
