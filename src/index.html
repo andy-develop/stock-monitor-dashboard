@@ -280,7 +280,7 @@
                 monthKdj: '月K线及 KDJ(9,3,3) 联动趋势图',
                 boll: '周K线及 BOLL(20,2) 趋势图',
                 rsi: '周K线 RSI(6) 趋势图',
-                deviation: '近10年偏离度曲线（周K · 价格/MA60 - 1）',
+                deviation: '近10年偏离度曲线（日K · 价格/MA60 - 1）',
                 day: '日K线及 MA5 / MA20 / 10日高点 趋势图',
             };
             return chartKeys.map(key => {
@@ -612,7 +612,7 @@
                     splitArea: { show: true },
                     axisLabel: { formatter: '{value}%' },
                 },
-                dataZoom: [{ type: 'inside', start: 0, end: 100 }],
+                dataZoom: [{ type: 'inside', start: 70, end: 100 }],
                 series: [
                     {
                         name: '偏离度',
