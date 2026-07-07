@@ -667,6 +667,47 @@
             return chart;
         }
 
+        function expandSection(targetId) {
+            const panel = document.getElementById(targetId);
+            const title = document.querySelector(`.signal-title[data-target="${targetId}"]`);
+            const btn = title?.querySelector('.signal-toggle-btn');
+            if (!panel || !panel.classList.contains('collapsed')) return;
+            panel.classList.remove('collapsed');
+            panel.classList.add('expanded');
+            if (btn) btn.innerText = '收起';
+        }
+
+        function expandChartPanel(windowIndex, chartKey) {
+            const panelId = `chart-panel-${windowIndex}-${chartKey}`;
+            const panel = document.getElementById(panelId);
+            const btn = document.querySelector(`.toggle-btn[data-target="${panelId}"]`);
+            if (!panel) return;
+
+            if (panel.classList.contains('collapsed')) {
+                panel.classList.remove('collapsed');
+                panel.classList.add('expanded');
+                if (btn) btn.innerText = '收起';
+            }
+
+            requestAnimationFrame(() => {
+                const chart = initChart(windowIndex, chartKey);
+                if (chart) chart.resize();
+            });
+        }
+
+        function handleDeviationAutoExpand(targetId) {
+            if (targetId.startsWith('trend-list-')) {
+                const windowIndex = targetId.replace('trend-list-', '');
+                expandSection(`deviation-list-${windowIndex}`);
+                expandChartPanel(windowIndex, 'deviation');
+                return;
+            }
+            if (targetId.startsWith('deviation-list-')) {
+                const windowIndex = targetId.replace('deviation-list-', '');
+                expandChartPanel(windowIndex, 'deviation');
+            }
+        }
+
         // 板块折叠/展开交互
         document.querySelectorAll('.category-header, .category-header .signal-toggle-btn').forEach(el => {
             el.addEventListener('click', (e) => {
@@ -705,6 +746,7 @@
                     panel.classList.remove('collapsed');
                     panel.classList.add('expanded');
                     btn.innerText = '收起';
+                    handleDeviationAutoExpand(targetId);
                 } else {
                     panel.classList.remove('expanded');
                     panel.classList.add('collapsed');
