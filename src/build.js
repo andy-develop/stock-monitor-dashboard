@@ -4,6 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 const { getKlinesWithCache, saveLastRun } = require('./fetcher');
+const { sanitizeRevertingSpikeKlines } = require('./kline-spike');
 const {
     calculateKDJ,
     calculateAdaptiveMonthlyMA,
@@ -552,7 +553,7 @@ const DAILY_KLINE_FETCH_COUNT = 2700;
 const WEEKLY_KLINE_FETCH_COUNT = 550;
 
 function buildDailyDeviationMonitoring(dayKlines) {
-    const seriesKlines = dayKlines.slice(-DAILY_DEVIATION_DAYS);
+    const seriesKlines = sanitizeRevertingSpikeKlines(dayKlines.slice(-DAILY_DEVIATION_DAYS));
     const ma60Day = calculateMA(seriesKlines, 60);
     const deviationRatio = calculatePriceMADeviationRatio(seriesKlines, 60);
     const deviationPct = deviationRatio.map((value) => (
