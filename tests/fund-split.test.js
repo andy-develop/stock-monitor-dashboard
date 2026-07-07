@@ -31,6 +31,19 @@ function testKeepPreSplitAdjustedBar() {
     console.log('✅ 已前复权 K 线保持不变测试通过');
 }
 
+function testKeepRegistrationWeekBar() {
+    const klines = [{
+        date: '2021-10-21',
+        open: 0.807,
+        close: 0.82,
+        high: 0.838,
+        low: 0.803,
+    }];
+    const result = normalizeFundSplitKlines('SH512890', klines);
+    assert.deepStrictEqual(result, klines, '权益登记周已在前复权尺度时不应被误折算');
+    console.log('✅ 权益登记周 K 线保持不变测试通过');
+}
+
 function testNormalizeTransitionBar() {
     const klines = [{
         date: '2021-10-29',
@@ -55,6 +68,7 @@ function testOtherSymbolUnchanged() {
 try {
     testNormalizePreSplitUnadjustedBar();
     testKeepPreSplitAdjustedBar();
+    testKeepRegistrationWeekBar();
     testNormalizeTransitionBar();
     testOtherSymbolUnchanged();
     console.log('\n🎉 基金份额拆分测试全部通过');

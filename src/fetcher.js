@@ -10,7 +10,7 @@ const DATA_DIR = path.join(__dirname, '../data');
 const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
 const LAST_RUN_FILE = path.join(DATA_DIR, 'last-run.json');
 const KLINE_ADJUST = 'qfq';
-const KLINE_CACHE_VERSION = 'v2';
+const KLINE_CACHE_VERSION = 'v3';
 
 function ensureDataDir() {
     if (!fs.existsSync(DATA_DIR)) {

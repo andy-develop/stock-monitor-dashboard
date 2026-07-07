@@ -10,7 +10,7 @@ const FUND_SPLIT_RULES = {
         transitionEndDate: '2021-11-30',
         splitFactor: 0.8002 / 1.6004,
         preSplitCloseThreshold: 1.05,
-        transitionFieldThreshold: 0.8002 * 1.02,
+        transitionInconsistentRatio: 1.1,
     },
 };
 
@@ -26,6 +26,13 @@ function scaleBar(bar, factor) {
         high: roundPrice(bar.high * factor),
         low: roundPrice(bar.low * factor),
     };
+}
+
+function shouldScaleTransitionField(value, anchor, rule) {
+    if (value > rule.preSplitCloseThreshold) {
+        return true;
+    }
+    return anchor > 0 && value > anchor * rule.transitionInconsistentRatio;
 }
 
 /**
@@ -49,15 +56,16 @@ function normalizeFundSplitKlines(code, klines) {
         }
 
         if (bar.date <= rule.transitionEndDate) {
+            const anchor = bar.close;
             const fix = (value) => (
-                value > rule.transitionFieldThreshold
+                shouldScaleTransitionField(value, anchor, rule)
                     ? roundPrice(value * rule.splitFactor)
                     : value
             );
             return {
                 ...bar,
                 open: fix(bar.open),
-                close: fix(bar.close),
+                close: bar.close > rule.preSplitCloseThreshold ? fix(bar.close) : bar.close,
                 high: fix(bar.high),
                 low: fix(bar.low),
             };
