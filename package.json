@@ -5,7 +5,7 @@
   "main": "src/build.js",
   "scripts": {
     "build": "node src/build.js",
-    "test": "node tests/indicators.test.js && node tests/fund-split.test.js && node tests/kline-spike.test.js"
+    "test": "node tests/indicators.test.js"
   },
   "dependencies": {
     "echarts": "^6.1.0",

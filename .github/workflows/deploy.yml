@@ -1,9 +1,6 @@
 name: Deploy Stock Monitor Dashboard
 
 on:
-  push:
-    branches:
-      - main
   schedule:
     # 工作日（周一到周五）北京时间 10:00 和 12:00 执行
     # 对应 UTC 02:00 和 04:00

@@ -4,13 +4,10 @@
 const fs = require('fs');
 const path = require('path');
 const { stocks } = require('stock-api');
-const { normalizeFundSplitKlines } = require('./fund-split');
 
 const DATA_DIR = path.join(__dirname, '../data');
 const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
 const LAST_RUN_FILE = path.join(DATA_DIR, 'last-run.json');
-const KLINE_ADJUST = 'qfq';
-const KLINE_CACHE_VERSION = 'v3';
 
 function ensureDataDir() {
     if (!fs.existsSync(DATA_DIR)) {
@@ -64,18 +61,18 @@ function validateKlines(klines, label, maxStalenessDays = 7) {
 /**
  * 获取 K 线，带本地缓存合并（若 API 失败可用缓存兜底）
  * @param {string} code
- * @param {'day'|'week'|'month'} period
+ * @param {'week'|'month'} period
  * @param {number} count
  * @returns {Promise<Array>}
  */
 async function getKlinesWithCache(code, period, count = 200) {
-    const cacheKey = `${code}_${period}_${KLINE_ADJUST}_${KLINE_CACHE_VERSION}`;
+    const cacheKey = `${code}_${period}`;
     const cache = readJson(HISTORY_FILE, {});
     const cachedKlines = cache[cacheKey] || [];
 
     let freshKlines;
     try {
-        freshKlines = await stocks.auto.getKlines(code, { period, count, adjust: KLINE_ADJUST });
+        freshKlines = await stocks.auto.getKlines(code, { period, count });
         validateKlines(freshKlines, `${period}K线`);
     } catch (e) {
         console.error(`获取 ${period}K线失败: ${e.message}`);
@@ -94,12 +91,11 @@ async function getKlinesWithCache(code, period, count = 200) {
     const merged = Array.from(mergedMap.values()).sort(
         (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
     );
-    const normalized = normalizeFundSplitKlines(code, merged);
 
-    cache[cacheKey] = normalized;
+    cache[cacheKey] = merged;
     writeJson(HISTORY_FILE, cache);
 
-    return normalized;
+    return merged;
 }
 
 function loadLastRun() {
@@ -115,5 +111,4 @@ module.exports = {
     loadLastRun,
     saveLastRun,
     validateKlines,
-    KLINE_ADJUST,
 };

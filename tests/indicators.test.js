@@ -2,7 +2,7 @@
  * 指标计算单元测试
  */
 const assert = require('assert');
-const { calculateKDJ, calculateMA, calculatePriceMADeviationRatio } = require('../src/indicators');
+const { calculateKDJ, calculateMA } = require('../src/indicators');
 
 // 构造 10 条测试 K 线
 const testKlines = [
@@ -55,19 +55,9 @@ function testErrorHandling() {
     console.log('✅ 异常处理测试通过');
 }
 
-function testCalculatePriceMADeviationRatio() {
-    const ma5 = calculateMA(testKlines, 5);
-    const ratio = calculatePriceMADeviationRatio(testKlines, 5);
-    const latestIndex = testKlines.length - 1;
-    const expected = Number((testKlines[latestIndex].close / ma5[latestIndex] - 1).toFixed(4));
-    assert.strictEqual(ratio[latestIndex], expected, '偏离度比率应为 收盘价/MA - 1');
-    console.log('✅ calculatePriceMADeviationRatio 测试通过');
-}
-
 try {
     testCalculateMA();
     testCalculateKDJ();
-    testCalculatePriceMADeviationRatio();
     testErrorHandling();
     console.log('\n🎉 所有测试通过');
 } catch (e) {

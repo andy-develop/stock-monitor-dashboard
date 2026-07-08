@@ -4,7 +4,6 @@
 const fs = require('fs');
 const path = require('path');
 const { getKlinesWithCache, saveLastRun } = require('./fetcher');
-const { sanitizeRevertingSpikeKlines } = require('./kline-spike');
 const {
     calculateKDJ,
     calculateAdaptiveMonthlyMA,
@@ -14,7 +13,6 @@ const {
     calculateMA,
     calculatePeriodHigh,
     calculatePriceMADeviation,
-    calculatePriceMADeviationRatio,
     calculateMADeviation,
     detectMomentumExhaustion,
     detectMomentumExhaustionDetails,
@@ -461,171 +459,16 @@ function evaluateConsumerSellSignals({ dayKlines, ma5, ma20 }) {
     };
 }
 
-function evaluateTrendMonitoring({ dayKlines, ma60 }) {
-    const latestIndex = dayKlines.length - 1;
-    const prevIndex = dayKlines.length - 2;
-    const latest = dayKlines[latestIndex];
-    const latestMA60 = ma60[latestIndex];
-    const prevMA60 = ma60[prevIndex];
-
-    const maAvailable = latestMA60 !== null && prevMA60 !== null;
-    if (!maAvailable) {
-        return {
-            alert: {
-                type: 'success',
-                title: '📈 趋势监控（MA60）',
-                chartKeys: [],
-                metrics: [{ label: '状态', value: '数据不足' }],
-                reason: '日线数据不足，无法计算 MA60 趋势监控。',
-            },
-        };
-    }
-
-    const downC1 = latest.low < latestMA60;
-    const downC2 = latest.close < latestMA60;
-    const downC3 = latest.close < latestMA60 * 0.98;
-    const downC4 = latestMA60 < prevMA60;
-    const downRecent3 = dayKlines.slice(-3).every((k, i) => {
-        const idx = dayKlines.length - 3 + i;
-        const m = ma60[idx];
-        const pm = ma60[idx - 1];
-        if (m === null || pm === null) return false;
-        return k.close < m || k.close < m * 0.98 || m < pm;
-    });
-    const downC5 = downRecent3;
-
-    const upC1 = latest.high > latestMA60;
-    const upC2 = latest.close > latestMA60;
-    const upC3 = latest.close > latestMA60 * 1.02;
-    const upC4 = latestMA60 > prevMA60;
-    const upRecent3 = dayKlines.slice(-3).every((k, i) => {
-        const idx = dayKlines.length - 3 + i;
-        const m = ma60[idx];
-        const pm = ma60[idx - 1];
-        if (m === null || pm === null) return false;
-        return k.close > m || k.close > m * 1.02 || m > pm;
-    });
-    const upC5 = upRecent3;
-
-    const downCount = [downC1, downC2, downC3, downC4, downC5].filter(Boolean).length;
-    const upCount = [upC1, upC2, upC3, upC4, upC5].filter(Boolean).length;
-
-    let type = 'success';
-    if (downCount >= 3 || upCount >= 3) type = 'warning';
-    if (downCount >= 4 || upCount >= 4) type = 'danger';
-
-    const direction = downCount === upCount
-        ? '震荡/待确认'
-        : (downCount > upCount ? '下跌趋势占优' : '上升趋势占优');
-
-    return {
-        alert: {
-            type,
-            title: '📈 趋势监控（MA60）',
-            chartKeys: [],
-            metrics: [
-                { label: '最新日收盘', value: latest.close },
-                { label: '最新日 MA60', value: latestMA60 },
-                { label: '下跌条件满足数', value: `${downCount}/5` },
-                { label: '上升条件满足数', value: `${upCount}/5` },
-                { label: '趋势判断', value: direction },
-            ],
-            reason: '标注：震荡市不看，一般满足 3-4 个条件可确认趋势方向。',
-            signalDetails: [
-                { label: '下跌1：盘中最低价跌破 MA60', triggered: downC1, value: `最低 ${latest.low} / MA60 ${latestMA60}` },
-                { label: '下跌2：收盘价跌破 MA60', triggered: downC2, value: `收盘 ${latest.close} / MA60 ${latestMA60}` },
-                { label: '下跌3：收盘价较 MA60 跌幅超过 2%', triggered: downC3, value: `${((latest.close / latestMA60 - 1) * 100).toFixed(2)}%` },
-                { label: '下跌4：MA60 趋势向下', triggered: downC4, value: `今日 ${latestMA60} / 昨日 ${prevMA60}` },
-                { label: '下跌5：下跌2-4 连续出现 3 日', triggered: downC5, value: downC5 ? '是' : '否' },
-                { label: '上升1：盘中最高价突破 MA60', triggered: upC1, value: `最高 ${latest.high} / MA60 ${latestMA60}` },
-                { label: '上升2：收盘价突破 MA60', triggered: upC2, value: `收盘 ${latest.close} / MA60 ${latestMA60}` },
-                { label: '上升3：收盘价较 MA60 突破超过 2%', triggered: upC3, value: `${((latest.close / latestMA60 - 1) * 100).toFixed(2)}%` },
-                { label: '上升4：MA60 趋势向上', triggered: upC4, value: `今日 ${latestMA60} / 昨日 ${prevMA60}` },
-                { label: '上升5：上升2-4 连续出现 3 日', triggered: upC5, value: upC5 ? '是' : '否' },
-            ],
-        },
-    };
-}
-
-const DAILY_DEVIATION_YEARS = 10;
-const DAILY_DEVIATION_DAYS = 252 * DAILY_DEVIATION_YEARS;
-const DAILY_KLINE_FETCH_COUNT = 2700;
-const WEEKLY_KLINE_FETCH_COUNT = 550;
-
-function buildDailyDeviationMonitoring(dayKlines) {
-    const seriesKlines = sanitizeRevertingSpikeKlines(dayKlines.slice(-DAILY_DEVIATION_DAYS));
-    const ma60Day = calculateMA(seriesKlines, 60);
-    const deviationRatio = calculatePriceMADeviationRatio(seriesKlines, 60);
-    const deviationPct = deviationRatio.map((value) => (
-        value === null ? null : Number((value * 100).toFixed(2))
-    ));
-
-    const latestIndex = seriesKlines.length - 1;
-    const latestClose = seriesKlines[latestIndex]?.close ?? null;
-    const latestMA60 = ma60Day[latestIndex] ?? null;
-    const latestDeviationPct = deviationPct[latestIndex];
-
-    const monitor = evaluateDeviationMonitoring({
-        latestClose,
-        latestMA60,
-        latestDeviationPct,
-        historyDays: seriesKlines.length,
-    });
-
-    return {
-        alert: monitor.alert,
-        deviationData: {
-            dates: seriesKlines.map((k) => k.date),
-            values: deviationPct,
-            referenceLines: [30, 20, -20, -30],
-        },
-    };
-}
-
-function evaluateDeviationMonitoring({
-    latestClose,
-    latestMA60,
-    latestDeviationPct,
-    historyDays,
-}) {
-    const maAvailable = latestMA60 !== null && latestMA60 !== 0;
-    const deviationPct = latestDeviationPct !== null && latestDeviationPct !== undefined
-        ? `${latestDeviationPct.toFixed(2)}%`
-        : '数据不足';
-    const historyLabel = historyDays >= DAILY_DEVIATION_DAYS
-        ? `近 ${DAILY_DEVIATION_YEARS} 年（${historyDays} 个交易日）`
-        : `${historyDays} 个交易日（上市不足 ${DAILY_DEVIATION_YEARS} 年）`;
-    return {
-        alert: {
-            type: 'success',
-            title: '📏 偏离度监控（日K · 价格/MA60 - 1）',
-            chartKeys: ['deviation'],
-            metrics: [
-                { label: '最新日收盘价', value: latestClose },
-                { label: '最新日 MA60', value: maAvailable ? latestMA60 : '数据不足' },
-                { label: '当前偏离度', value: deviationPct },
-                { label: '历史跨度', value: historyLabel },
-                { label: '参考极值', value: '±30% / ±20%（2015 年创业板 +30%）' },
-            ],
-            reason: maAvailable
-                ? `基于日K线计算近 ${DAILY_DEVIATION_YEARS} 年偏离度曲线（价格 / 日MA60 - 1），当前值为 ${deviationPct}。图表含 ±30% 与 ±20% 参考虚线；标注：2015 年创业板最大偏离度是 +30%。`
-                : '日K线数据不足，无法计算偏离度。',
-        },
-    };
-}
-
 async function buildEtfWindow() {
     const code = 'SH512890';
     const name = '红利低波ETF华泰柏瑞';
     const indexName = '中证红利低波动指数 (H30269)';
 
     console.log(`开始获取 ${name} (${code}) 数据...`);
-    const weekKlines = await getKlinesWithCache(code, 'week', WEEKLY_KLINE_FETCH_COUNT);
+    const weekKlines = await getKlinesWithCache(code, 'week', 200);
     const monthKlines = await getKlinesWithCache(code, 'month', 100);
-    const dayKlines = await getKlinesWithCache(code, 'day', DAILY_KLINE_FETCH_COUNT);
     console.log(`  周线数据：${weekKlines.length} 条`);
     console.log(`  月线数据：${monthKlines.length} 条`);
-    console.log(`  日线数据：${dayKlines.length} 条`);
 
     if (weekKlines.length < 9) throw new Error('周线数据不足，无法计算 KDJ');
 
@@ -633,7 +476,6 @@ async function buildEtfWindow() {
     const maResult = calculateAdaptiveMonthlyMA(monthKlines);
     const bollResult = calculateBOLL(weekKlines, 20, 2);
     const rsiResult = calculateRSI(weekKlines, 6);
-    const ma60Day = calculateMA(dayKlines, 60);
 
     const latestJ = kdjResult.J[kdjResult.J.length - 1];
     const latestMonth = monthKlines[monthKlines.length - 1];
@@ -653,8 +495,6 @@ async function buildEtfWindow() {
         boll: bollResult,
         rsi: rsiResult,
     });
-    const trendMonitor = evaluateTrendMonitoring({ dayKlines, ma60: ma60Day });
-    const deviationMonitor = buildDailyDeviationMonitoring(dayKlines);
 
     const displayLimit = 100;
 
@@ -666,13 +506,8 @@ async function buildEtfWindow() {
         updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
         buySectionTitle: '买入信号',
         sellSectionTitle: '卖出信号',
-        trendSectionTitle: '趋势监控',
-        deviationSectionTitle: '偏离度监控',
         buyAlerts,
         sellAlert: sellSignalResult.alert,
-        trendAlerts: [trendMonitor.alert],
-        deviationAlerts: [deviationMonitor.alert],
-        deviationData: deviationMonitor.deviationData,
         weekData: {
             dates: weekKlines.slice(-displayLimit).map((k) => k.date),
             candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
@@ -706,9 +541,9 @@ async function buildHs300Window() {
     const indexName = '沪深300指数 (CSI 300)';
 
     console.log(`开始获取 ${name} (${code}) 数据...`);
-    const weekKlines = await getKlinesWithCache(code, 'week', WEEKLY_KLINE_FETCH_COUNT);
+    const weekKlines = await getKlinesWithCache(code, 'week', 200);
     const monthKlines = await getKlinesWithCache(code, 'month', 100);
-    const dayKlines = await getKlinesWithCache(code, 'day', DAILY_KLINE_FETCH_COUNT);
+    const dayKlines = await getKlinesWithCache(code, 'day', 300);
     console.log(`  周线数据：${weekKlines.length} 条`);
     console.log(`  月线数据：${monthKlines.length} 条`);
     console.log(`  日线数据：${dayKlines.length} 条`);
@@ -740,8 +575,6 @@ async function buildHs300Window() {
         dayKlines,
         dayMA60: ma60Day,
     });
-    const trendMonitor = evaluateTrendMonitoring({ dayKlines, ma60: ma60Day });
-    const deviationMonitor = buildDailyDeviationMonitoring(dayKlines);
 
     const displayLimit = 100;
 
@@ -753,13 +586,8 @@ async function buildHs300Window() {
         updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
         buySectionTitle: '买入信号',
         sellSectionTitle: '卖出信号',
-        trendSectionTitle: '趋势监控',
-        deviationSectionTitle: '偏离度监控',
         buyAlerts: [buySignalResult.alert],
         sellAlert: sellSignalResult.alert,
-        trendAlerts: [trendMonitor.alert],
-        deviationAlerts: [deviationMonitor.alert],
-        deviationData: deviationMonitor.deviationData,
         weekData: {
             dates: weekKlines.slice(-displayLimit).map((k) => k.date),
             candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
@@ -804,9 +632,9 @@ async function buildChiNextWindow() {
     const indexName = '创业板指 (ChiNext)';
 
     console.log(`开始获取 ${name} (${code}) 数据...`);
-    const weekKlines = await getKlinesWithCache(code, 'week', WEEKLY_KLINE_FETCH_COUNT);
+    const weekKlines = await getKlinesWithCache(code, 'week', 200);
     const monthKlines = await getKlinesWithCache(code, 'month', 100);
-    const dayKlines = await getKlinesWithCache(code, 'day', DAILY_KLINE_FETCH_COUNT);
+    const dayKlines = await getKlinesWithCache(code, 'day', 300);
     console.log(`  周线数据：${weekKlines.length} 条`);
     console.log(`  月线数据：${monthKlines.length} 条`);
     console.log(`  日线数据：${dayKlines.length} 条`);
@@ -836,8 +664,6 @@ async function buildChiNextWindow() {
         dayKlines,
         dayMA60: ma60Day,
     });
-    const trendMonitor = evaluateTrendMonitoring({ dayKlines, ma60: ma60Day });
-    const deviationMonitor = buildDailyDeviationMonitoring(dayKlines);
 
     const displayLimit = 100;
 
@@ -849,13 +675,90 @@ async function buildChiNextWindow() {
         updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
         buySectionTitle: '买入信号',
         sellSectionTitle: '卖出信号',
-        trendSectionTitle: '趋势监控',
-        deviationSectionTitle: '偏离度监控',
         buyAlerts: [buySignalResult.alert],
         sellAlert: sellSignalResult.alert,
-        trendAlerts: [trendMonitor.alert],
-        deviationAlerts: [deviationMonitor.alert],
-        deviationData: deviationMonitor.deviationData,
+        weekData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+        },
+        monthData: {
+            dates: monthKlines.slice(-displayLimit).map((k) => k.date),
+            closes: monthKlines.slice(-displayLimit).map((k) => k.close),
+            ma: ma60Month.slice(-displayLimit),
+            maPeriod: 60,
+        },
+        bollData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+            upper: sellSignalResult.bollData.upper.slice(-displayLimit),
+            middle: sellSignalResult.bollData.middle.slice(-displayLimit),
+            lower: sellSignalResult.bollData.lower.slice(-displayLimit),
+        },
+        rsiData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            values: sellSignalResult.rsiData.slice(-displayLimit),
+        },
+        monthBollData: {
+            dates: monthKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: monthKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+            upper: buySignalResult.bollData.upper.slice(-displayLimit),
+            middle: buySignalResult.bollData.middle.slice(-displayLimit),
+            lower: buySignalResult.bollData.lower.slice(-displayLimit),
+        },
+    };
+}
+
+async function buildCsi1000Window() {
+    const code = 'SH512100';
+    const name = '中证1000ETF华泰柏瑞';
+    const indexName = '中证1000指数 (CSI 1000)';
+
+    console.log(`开始获取 ${name} (${code}) 数据...`);
+    const weekKlines = await getKlinesWithCache(code, 'week', 200);
+    const monthKlines = await getKlinesWithCache(code, 'month', 100);
+    const dayKlines = await getKlinesWithCache(code, 'day', 300);
+    console.log(`  周线数据：${weekKlines.length} 条`);
+    console.log(`  月线数据：${monthKlines.length} 条`);
+    console.log(`  日线数据：${dayKlines.length} 条`);
+
+    if (weekKlines.length < 9) throw new Error('周线数据不足，无法计算 KDJ');
+    if (monthKlines.length < 20) throw new Error('月线数据不足，无法计算 MA60 / BOLL(20,2)');
+
+    // 卖出指标：周线 BOLL + RSI，日线 MA60 破位
+    const bollWeek = calculateBOLL(weekKlines, 20, 2);
+    const rsiWeek = calculateRSI(weekKlines, 6);
+    const ma60Day = calculateMA(dayKlines, 60);
+
+    // 买入指标：月线 MA60 超跌 + BOLL 下轨
+    const bollMonth = calculateBOLL(monthKlines, 20, 2);
+    const ma60Month = calculateMA(monthKlines, 60);
+
+    const buySignalResult = evaluateChiNextBuySignals({
+        monthKlines,
+        ma60: ma60Month,
+        boll: bollMonth,
+    });
+
+    const sellSignalResult = evaluateEtfSellSignals({
+        weekKlines,
+        boll: bollWeek,
+        rsi: rsiWeek,
+        dayKlines,
+        dayMA60: ma60Day,
+    });
+
+    const displayLimit = 100;
+
+    return {
+        id: 'csi1000',
+        stockName: name,
+        stockCode: code,
+        indexName,
+        updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+        buySectionTitle: '买入信号',
+        sellSectionTitle: '卖出信号',
+        buyAlerts: [buySignalResult.alert],
+        sellAlert: sellSignalResult.alert,
         weekData: {
             dates: weekKlines.slice(-displayLimit).map((k) => k.date),
             candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
@@ -891,7 +794,7 @@ async function buildConsumerWindow({ id, code, name, thresholds, valueHint, hint
     const indexName = '消费类股票';
 
     console.log(`开始获取 ${name} (${code}) 数据...`);
-    const dayKlines = await getKlinesWithCache(code, 'day', DAILY_KLINE_FETCH_COUNT);
+    const dayKlines = await getKlinesWithCache(code, 'day', 300);
     console.log(`  日线数据：${dayKlines.length} 条`);
 
     if (dayKlines.length < 30) throw new Error('日线数据不足，无法计算均线');
@@ -1429,6 +1332,7 @@ async function main() {
         const etfWindow = await buildEtfWindow();
         const hs300Window = await buildHs300Window();
         const chinextWindow = await buildChiNextWindow();
+        const csi1000Window = await buildCsi1000Window();
         const greeWindow = await buildGreeWindow();
         const shuanghuiWindow = await buildShuanghuiWindow();
         const deejWindow = await buildDeejWindow();
@@ -1442,12 +1346,13 @@ async function main() {
         const mideaWindow = await buildMideaWindow();
         const moutaiWindow = await buildMoutaiWindow();
 
-        const dashboardData = [etfWindow, hs300Window, chinextWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow, thsWindow, chinamobileWindow, abcbankWindow, sinopecWindow, cnoocWindow, mideaWindow, moutaiWindow];
+        const dashboardData = [etfWindow, hs300Window, chinextWindow, csi1000Window, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow, thsWindow, chinamobileWindow, abcbankWindow, sinopecWindow, cnoocWindow, mideaWindow, moutaiWindow];
 
         // 板块归类
         etfWindow.category = 'ETF';
         hs300Window.category = 'ETF';
         chinextWindow.category = 'ETF';
+        csi1000Window.category = 'ETF';
         greeWindow.category = '股票';
         shuanghuiWindow.category = '股票';
         deejWindow.category = '股票';
@@ -1470,6 +1375,7 @@ async function main() {
                 { id: etfWindow.id, stockCode: etfWindow.stockCode, alerts: etfWindow.buyAlerts, sellAlert: etfWindow.sellAlert },
                 { id: hs300Window.id, stockCode: hs300Window.stockCode, alerts: hs300Window.buyAlerts, sellAlert: hs300Window.sellAlert },
                 { id: chinextWindow.id, stockCode: chinextWindow.stockCode, alerts: chinextWindow.buyAlerts, sellAlert: chinextWindow.sellAlert },
+                { id: csi1000Window.id, stockCode: csi1000Window.stockCode, alerts: csi1000Window.buyAlerts, sellAlert: csi1000Window.sellAlert },
                 { id: greeWindow.id, stockCode: greeWindow.stockCode, buyAlerts: greeWindow.buyAlerts, sellAlert: greeWindow.sellAlert },
                 { id: shuanghuiWindow.id, stockCode: shuanghuiWindow.stockCode, buyAlerts: shuanghuiWindow.buyAlerts, sellAlert: shuanghuiWindow.sellAlert },
                 { id: deejWindow.id, stockCode: deejWindow.stockCode, buyAlerts: deejWindow.buyAlerts, sellAlert: deejWindow.sellAlert },
