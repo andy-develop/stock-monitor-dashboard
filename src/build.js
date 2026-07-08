@@ -976,7 +976,7 @@ async function buildCsi1000Window() {
     };
 }
 
-async function buildConsumerWindow({ id, code, name, thresholds, valueHint, hint }) {
+async function buildConsumerWindow({ id, code, name, thresholds, valueHint, hint, tags }) {
     const indexName = '消费类股票';
 
     console.log(`开始获取 ${name} (${code}) 数据...`);
@@ -1001,6 +1001,7 @@ async function buildConsumerWindow({ id, code, name, thresholds, valueHint, hint
         stockCode: code,
         indexName,
         hint,
+        tags,
         updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
         buySectionTitle: '买入机会',
         sellSectionTitle: '卖出机会',
@@ -1036,6 +1037,7 @@ async function buildDeejWindow() {
         code: 'SZ000423',
         name: '东阿阿胶',
         thresholds: { value: 45, pessimistic: 42, iron: 40 },
+        tags: ['长周期稳健'],
     });
 }
 
@@ -1080,6 +1082,7 @@ async function buildShenhuaWindow() {
         stockName: name,
         stockCode: code,
         indexName,
+        tags: ['长周期稳健'],
         updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
         buySectionTitle: '买入信号',
         sellSectionTitle: '卖出信号',
@@ -1197,6 +1200,7 @@ async function buildChinaMobileWindow() {
         stockName: name,
         stockCode: code,
         indexName,
+        tags: ['长周期稳健'],
         updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
         buySectionTitle: '买入信号',
         sellSectionTitle: '卖出信号',
@@ -1371,6 +1375,7 @@ async function buildCnoocWindow() {
         stockName: name,
         stockCode: code,
         indexName,
+        tags: ['长周期稳健'],
         updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
         buySectionTitle: '买入信号',
         sellSectionTitle: '卖出信号',
@@ -1431,6 +1436,7 @@ async function buildMideaWindow() {
         stockName: name,
         stockCode: code,
         indexName,
+        tags: ['长周期稳健'],
         updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
         buySectionTitle: '买入信号',
         sellSectionTitle: '卖出信号',
@@ -1488,6 +1494,7 @@ async function buildMoutaiWindow() {
         stockName: name,
         stockCode: code,
         indexName,
+        tags: ['长周期稳健'],
         updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
         buySectionTitle: '买入信号',
         sellSectionTitle: '卖出信号',
@@ -1545,6 +1552,65 @@ async function buildJinghuWindow() {
         stockName: name,
         stockCode: code,
         indexName,
+        tags: ['长周期稳健'],
+        updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+        buySectionTitle: '买入信号',
+        sellSectionTitle: '卖出信号',
+        buyAlerts: [buySignalResult.alert],
+        sellAlert: null,
+        weekData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+        },
+        monthData: {
+            dates: monthKlines.slice(-displayLimit).map((k) => k.date),
+            closes: monthKlines.slice(-displayLimit).map((k) => k.close),
+            ma: ma60Month.slice(-displayLimit),
+            maPeriod: 60,
+        },
+        bollData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+            upper: buySignalResult.weekBollData.upper.slice(-displayLimit),
+            middle: buySignalResult.weekBollData.middle.slice(-displayLimit),
+            lower: buySignalResult.weekBollData.lower.slice(-displayLimit),
+        },
+    };
+}
+
+async function buildCrsWindow() {
+    const code = 'SZ000999';
+    const name = '华润三九';
+    const indexName = '中药 · 国企改革龙头';
+
+    console.log(`开始获取 ${name} (${code}) 数据...`);
+    const weekKlines = await getKlinesWithCache(code, 'week', 200);
+    const monthKlines = await getKlinesWithCache(code, 'month', 100);
+    console.log(`  周线数据：${weekKlines.length} 条`);
+    console.log(`  月线数据：${monthKlines.length} 条`);
+
+    if (weekKlines.length < 20) throw new Error('周线数据不足，无法计算 BOLL(20,2)');
+    if (monthKlines.length < 60) throw new Error('月线数据不足，无法计算 MA60');
+
+    const weekBoll = calculateBOLL(weekKlines, 20, 2);
+    const ma60Month = calculateMA(monthKlines, 60);
+
+    const buySignalResult = evaluateMonthMA60WeekBollBuySignals({
+        stockName: name,
+        monthKlines,
+        ma60: ma60Month,
+        weekKlines,
+        weekBoll,
+    });
+
+    const displayLimit = 100;
+
+    return {
+        id: 'crs',
+        stockName: name,
+        stockCode: code,
+        indexName,
+        tags: ['长周期稳健'],
         updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
         buySectionTitle: '买入信号',
         sellSectionTitle: '卖出信号',
@@ -1589,8 +1655,9 @@ async function main() {
         const mideaWindow = await buildMideaWindow();
         const moutaiWindow = await buildMoutaiWindow();
         const jinghuWindow = await buildJinghuWindow();
+        const crsWindow = await buildCrsWindow();
 
-        const dashboardData = [etfWindow, hs300Window, chinextWindow, csi1000Window, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow, thsWindow, chinamobileWindow, abcbankWindow, sinopecWindow, cnoocWindow, mideaWindow, moutaiWindow, jinghuWindow];
+        const dashboardData = [etfWindow, hs300Window, chinextWindow, csi1000Window, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow, thsWindow, chinamobileWindow, abcbankWindow, sinopecWindow, cnoocWindow, mideaWindow, moutaiWindow, jinghuWindow, crsWindow];
 
         // 板块归类
         etfWindow.category = 'ETF';
@@ -1610,6 +1677,7 @@ async function main() {
         mideaWindow.category = '股票';
         moutaiWindow.category = '股票';
         jinghuWindow.category = '股票';
+        crsWindow.category = '股票';
 
         renderHtml(dashboardData, DIST_DIR);
         copyEcharts();
@@ -1634,6 +1702,7 @@ async function main() {
                 { id: mideaWindow.id, stockCode: mideaWindow.stockCode, buyAlerts: mideaWindow.buyAlerts, sellAlert: mideaWindow.sellAlert },
                 { id: moutaiWindow.id, stockCode: moutaiWindow.stockCode, buyAlerts: moutaiWindow.buyAlerts, sellAlert: moutaiWindow.sellAlert },
                 { id: jinghuWindow.id, stockCode: jinghuWindow.stockCode, buyAlerts: jinghuWindow.buyAlerts, sellAlert: jinghuWindow.sellAlert },
+                { id: crsWindow.id, stockCode: crsWindow.stockCode, buyAlerts: crsWindow.buyAlerts, sellAlert: crsWindow.sellAlert },
             ],
         });
 

@@ -46,6 +46,16 @@
             border-radius: 4px;
             font-size: 12px;
         }
+        .header .tag {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 2px 8px;
+            background: #e6f4ff;
+            border: 1px solid #91caff;
+            color: #0958d9;
+            border-radius: 4px;
+            font-size: 12px;
+        }
         .header .meta { text-align: right; color: #888; font-size: 13px; }
         .category-header {
             display: flex;
@@ -367,7 +377,7 @@
                     <div class="header">
                         <div>
                             <h1>${windowData.stockName} (${windowData.stockCode})</h1>
-                            <p class="subtitle">${windowData.indexName} · 自动化监控${windowData.hint ? `<span class="hint">${windowData.hint}</span>` : ''}</p>
+                            <p class="subtitle">${windowData.indexName} · 自动化监控${windowData.tags ? windowData.tags.map(t => `<span class="tag">${t}</span>`).join('') : ''}${windowData.hint ? `<span class="hint">${windowData.hint}</span>` : ''}</p>
                         </div>
                         <div class="meta">
                             <div>更新时间：${windowData.updateTime}</div>
