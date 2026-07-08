@@ -4,10 +4,13 @@
 const fs = require('fs');
 const path = require('path');
 const { stocks } = require('stock-api');
+const { normalizeFundSplitKlines } = require('./fund-split');
 
 const DATA_DIR = path.join(__dirname, '../data');
 const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
 const LAST_RUN_FILE = path.join(DATA_DIR, 'last-run.json');
+const KLINE_ADJUST = 'qfq';
+const KLINE_CACHE_VERSION = 'v3';
 
 function ensureDataDir() {
     if (!fs.existsSync(DATA_DIR)) {
@@ -61,18 +64,48 @@ function validateKlines(klines, label, maxStalenessDays = 7) {
 /**
  * 获取 K 线，带本地缓存合并（若 API 失败可用缓存兜底）
  * @param {string} code
- * @param {'week'|'month'} period
+ * @param {'day'|'week'|'month'} period
  * @param {number} count
  * @returns {Promise<Array>}
  */
+const API_MAX_COUNT = 2000; // stock-api 返回空数组当 count > 2000
+
+async function fetchKlinesPaginated(code, period, count, adjust) {
+    if (count <= API_MAX_COUNT) {
+        return stocks.auto.getKlines(code, { period, count, adjust });
+    }
+    // 分页：先取最近 API_MAX_COUNT 条，再往前翻
+    const all = [];
+    let remaining = count;
+    let lastDate = null;
+    while (remaining > 0) {
+        const fetchCount = Math.min(remaining, API_MAX_COUNT);
+        const batch = await stocks.auto.getKlines(code, { period, count: fetchCount, adjust });
+        if (!batch || batch.length === 0) break;
+        if (lastDate) {
+            // 过滤掉已获取的（按日期去重）
+            const filtered = batch.filter((k) => new Date(k.date) < new Date(lastDate));
+            if (filtered.length === 0) break;
+            all.unshift(...filtered);
+            lastDate = filtered[0].date;
+        } else {
+            all.unshift(...batch);
+            lastDate = batch[0].date;
+        }
+        remaining -= batch.length;
+        if (batch.length < fetchCount) break; // 没有更多历史数据了
+    }
+    return all;
+}
+
 async function getKlinesWithCache(code, period, count = 200) {
-    const cacheKey = `${code}_${period}`;
+    const cacheKey = `${code}_${period}_${KLINE_ADJUST}_${KLINE_CACHE_VERSION}`;
     const cache = readJson(HISTORY_FILE, {});
     const cachedKlines = cache[cacheKey] || [];
 
     let freshKlines;
     try {
-        freshKlines = await stocks.auto.getKlines(code, { period, count });
+        freshKlines = await fetchKlinesPaginated(code, period, count, KLINE_ADJUST);
         validateKlines(freshKlines, `${period}K线`);
     } catch (e) {
         console.error(`获取 ${period}K线失败: ${e.message}`);
@@ -91,11 +124,12 @@ async function getKlinesWithCache(code, period, count = 200) {
     const merged = Array.from(mergedMap.values()).sort(
         (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
     );
+    const normalized = normalizeFundSplitKlines(code, merged);
 
-    cache[cacheKey] = merged;
+    cache[cacheKey] = normalized;
     writeJson(HISTORY_FILE, cache);
 
-    return merged;
+    return normalized;
 }
 
 function loadLastRun() {
@@ -111,4 +145,5 @@ module.exports = {
     loadLastRun,
     saveLastRun,
     validateKlines,
+    KLINE_ADJUST,
 };

@@ -280,6 +280,7 @@
                 monthKdj: '月K线及 KDJ(9,3,3) 联动趋势图',
                 boll: '周K线及 BOLL(20,2) 趋势图',
                 rsi: '周K线 RSI(6) 趋势图',
+                deviation: '近10年偏离度曲线（日K · 价格/MA60 - 1）',
                 day: '日K线及 MA5 / MA20 / 10日高点 趋势图',
             };
             return chartKeys.map(key => {
@@ -315,10 +316,51 @@
         }
 
         function renderWindow(windowData, index) {
-            const buyAlertsHtml = windowData.buyAlerts.map(a => renderAlertCard(a, index)).join('');
-            const sellAlertHtml = windowData.sellAlert
-                ? renderAlertCard(windowData.sellAlert, index)
-                : '<div class="empty-state">暂无信号</div>';
+            const sections = [
+                {
+                    key: 'buy',
+                    title: windowData.buySectionTitle,
+                    alerts: windowData.buyAlerts || [],
+                },
+                {
+                    key: 'sell',
+                    title: windowData.sellSectionTitle,
+                    alerts: windowData.sellAlert ? [windowData.sellAlert] : [],
+                },
+            ];
+
+            if (windowData.trendSectionTitle) {
+                sections.push({
+                    key: 'trend',
+                    title: windowData.trendSectionTitle,
+                    alerts: windowData.trendAlerts || [],
+                });
+            }
+            if (windowData.deviationSectionTitle) {
+                sections.push({
+                    key: 'deviation',
+                    title: windowData.deviationSectionTitle,
+                    alerts: windowData.deviationAlerts || [],
+                });
+            }
+
+            const sectionsHtml = sections.map(section => {
+                const listId = `${section.key}-list-${index}`;
+                const alertsHtml = section.alerts.length > 0
+                    ? section.alerts.map(a => renderAlertCard(a, index)).join('')
+                    : '<div class="empty-state">暂无信号</div>';
+                return `
+                    <div class="signal-card">
+                        <h2 class="signal-title" data-target="${listId}">
+                            <span>${section.title}</span>
+                            <button class="signal-toggle-btn" type="button" data-target="${listId}">展开</button>
+                        </h2>
+                        <div class="signals-list collapsed" id="${listId}">
+                            ${alertsHtml}
+                        </div>
+                    </div>
+                `;
+            }).join('');
 
             return `
                 <div class="window-group" data-window-index="${index}">
@@ -332,25 +374,7 @@
                         </div>
                     </div>
 
-                    <div class="signal-card">
-                        <h2 class="signal-title" data-target="buy-list-${index}">
-                            <span>${windowData.buySectionTitle}</span>
-                            <button class="signal-toggle-btn" type="button" data-target="buy-list-${index}">展开</button>
-                        </h2>
-                        <div class="signals-list collapsed" id="buy-list-${index}">
-                            ${buyAlertsHtml}
-                        </div>
-                    </div>
-
-                    <div class="signal-card">
-                        <h2 class="signal-title" data-target="sell-list-${index}">
-                            <span>${windowData.sellSectionTitle}</span>
-                            <button class="signal-toggle-btn" type="button" data-target="sell-list-${index}">展开</button>
-                        </h2>
-                        <div class="signals-list collapsed" id="sell-list-${index}">
-                            ${sellAlertHtml}
-                        </div>
-                    </div>
+                    ${sectionsHtml}
                 </div>
             `;
         }
@@ -399,9 +423,10 @@
 
         // 单个窗口标题颜色联动
         windows.forEach((w, i) => {
-            ['buy-list', 'sell-list'].forEach(kind => {
-                const list = document.getElementById(`${kind}-${i}`);
-                const title = document.querySelector(`.window-group[data-window-index="${i}"] .signal-title[data-target="${kind}-${i}"]`);
+            ['buy-list', 'sell-list', 'trend-list', 'deviation-list'].forEach(kind => {
+                const targetId = `${kind}-${i}`;
+                const list = document.getElementById(targetId);
+                const title = document.querySelector(`.window-group[data-window-index="${i}"] .signal-title[data-target="${targetId}"]`);
                 if (!list || !title) return;
                 const hasDanger = list.querySelector('.alert-danger') !== null
                     || list.querySelector('.alert-warning') !== null;
@@ -563,6 +588,46 @@
             return chart;
         }
 
+        function initDeviationChart(windowIndex, data) {
+            const chart = echarts.init(document.getElementById(`chart-${windowIndex}-deviation`));
+            const deviationData = data.deviationData || { dates: [], values: [], referenceLines: [30, 20, -20, -30] };
+            const referenceLines = deviationData.referenceLines || [30, 20, -20, -30];
+            const referenceSeries = referenceLines.map((level) => ({
+                name: `参考线 ${level > 0 ? '+' : ''}${level}%`,
+                type: 'line',
+                data: deviationData.dates.map(() => level),
+                showSymbol: false,
+                itemStyle: { color: Math.abs(level) === 30 ? '#ff9800' : '#9e9e9e' },
+                lineStyle: { type: 'dashed' },
+            }));
+            chart.setOption({
+                tooltip: {
+                    trigger: 'axis',
+                    valueFormatter: (value) => (value === null || value === undefined ? '-' : `${value}%`),
+                },
+                legend: { data: ['偏离度', ...referenceSeries.map((s) => s.name)], top: 0 },
+                xAxis: { type: 'category', data: deviationData.dates },
+                yAxis: {
+                    scale: true,
+                    splitArea: { show: true },
+                    axisLabel: { formatter: '{value}%' },
+                },
+                dataZoom: [{ type: 'inside', start: 0, end: 100 }],
+                series: [
+                    {
+                        name: '偏离度',
+                        type: 'line',
+                        data: deviationData.values,
+                        showSymbol: false,
+                        itemStyle: { color: '#3277c9' },
+                        areaStyle: { opacity: 0.08 },
+                    },
+                    ...referenceSeries,
+                ],
+            });
+            return chart;
+        }
+
         function initGreeDayChart(windowIndex, data) {
             const chart = echarts.init(document.getElementById(`chart-${windowIndex}-day`));
             chart.setOption({
@@ -595,9 +660,51 @@
             else if (chartKey === 'monthKdj') chart = initEtfMonthKdjChart(windowIndex, data);
             else if (chartKey === 'boll') chart = initEtfBollChart(windowIndex, data);
             else if (chartKey === 'rsi') chart = initEtfRsiChart(windowIndex, data);
+            else if (chartKey === 'deviation') chart = initDeviationChart(windowIndex, data);
             else if (chartKey === 'day') chart = initGreeDayChart(windowIndex, data);
             if (chart) chartInstances[key] = chart;
             return chart;
+        }
+
+        function expandSection(targetId) {
+            const panel = document.getElementById(targetId);
+            const title = document.querySelector(`.signal-title[data-target="${targetId}"]`);
+            const btn = title?.querySelector('.signal-toggle-btn');
+            if (!panel || !panel.classList.contains('collapsed')) return;
+            panel.classList.remove('collapsed');
+            panel.classList.add('expanded');
+            if (btn) btn.innerText = '收起';
+        }
+
+        function expandChartPanel(windowIndex, chartKey) {
+            const panelId = `chart-panel-${windowIndex}-${chartKey}`;
+            const panel = document.getElementById(panelId);
+            const btn = document.querySelector(`.toggle-btn[data-target="${panelId}"]`);
+            if (!panel) return;
+
+            if (panel.classList.contains('collapsed')) {
+                panel.classList.remove('collapsed');
+                panel.classList.add('expanded');
+                if (btn) btn.innerText = '收起';
+            }
+
+            requestAnimationFrame(() => {
+                const chart = initChart(windowIndex, chartKey);
+                if (chart) chart.resize();
+            });
+        }
+
+        function handleDeviationAutoExpand(targetId) {
+            if (targetId.startsWith('trend-list-')) {
+                const windowIndex = targetId.replace('trend-list-', '');
+                expandSection(`deviation-list-${windowIndex}`);
+                expandChartPanel(windowIndex, 'deviation');
+                return;
+            }
+            if (targetId.startsWith('deviation-list-')) {
+                const windowIndex = targetId.replace('deviation-list-', '');
+                expandChartPanel(windowIndex, 'deviation');
+            }
         }
 
         // 板块折叠/展开交互
@@ -638,6 +745,7 @@
                     panel.classList.remove('collapsed');
                     panel.classList.add('expanded');
                     btn.innerText = '收起';
+                    handleDeviationAutoExpand(targetId);
                 } else {
                     panel.classList.remove('expanded');
                     panel.classList.add('collapsed');
