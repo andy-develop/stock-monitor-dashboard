@@ -976,6 +976,101 @@ async function buildCsi1000Window() {
     };
 }
 
+/**
+ * 价值ETF易方达 (SZ159263)
+ * 2025年7月上市，历史不足1年，月线MA用 calculateAdaptiveMonthlyMA 自适应降级
+ * 买入信号：周KDJ J<1 + 月K低于自适应MA
+ * 卖出信号：周BOLL+RSI + 日线MA60破位
+ * 趋势监控 + 偏离度监控
+ */
+async function buildValueEtfWindow() {
+    const code = 'SZ159263';
+    const name = '价值ETF易方达';
+    const indexName = '价值指数';
+
+    console.log(`开始获取 ${name} (${code}) 数据...`);
+    const weekKlines = await getKlinesWithCache(code, 'week', WEEKLY_KLINE_FETCH_COUNT);
+    const monthKlines = await getKlinesWithCache(code, 'month', 100);
+    const dayKlines = await getKlinesWithCache(code, 'day', DAILY_KLINE_FETCH_COUNT);
+    console.log(`  周线数据：${weekKlines.length} 条`);
+    console.log(`  月线数据：${monthKlines.length} 条`);
+    console.log(`  日线数据：${dayKlines.length} 条`);
+
+    if (weekKlines.length < 9) throw new Error('周线数据不足，无法计算 KDJ');
+
+    const kdjResult = calculateKDJ(weekKlines);
+    const maResult = calculateAdaptiveMonthlyMA(monthKlines);
+    const bollResult = calculateBOLL(weekKlines, 20, 2);
+    const rsiResult = calculateRSI(weekKlines, 6);
+    const ma60Day = calculateMA(dayKlines, 60);
+
+    const latestJ = kdjResult.J[kdjResult.J.length - 1];
+    const latestMonth = monthKlines[monthKlines.length - 1];
+    const latestMA = maResult.ma[maResult.ma.length - 1];
+    const latestWeek = weekKlines[weekKlines.length - 1];
+
+    const buyAlerts = evaluateEtfBuyAlerts({
+        latestWeekClose: latestWeek.close,
+        latestJ,
+        latestMonthClose: latestMonth.close,
+        latestMA,
+        maPeriod: maResult.period,
+    });
+
+    const sellSignalResult = evaluateEtfSellSignals({
+        weekKlines,
+        boll: bollResult,
+        rsi: rsiResult,
+        dayKlines,
+        dayMA60: ma60Day,
+    });
+    const trendMonitor = evaluateTrendMonitoring({ dayKlines, ma60: ma60Day });
+    const deviationMonitor = buildDailyDeviationMonitoring(dayKlines);
+
+    const displayLimit = 100;
+
+    return {
+        id: 'value-etf',
+        stockName: name,
+        stockCode: code,
+        indexName,
+        updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+        buySectionTitle: '买入信号',
+        sellSectionTitle: '卖出信号',
+        trendSectionTitle: '趋势监控',
+        deviationSectionTitle: '偏离度监控',
+        buyAlerts,
+        sellAlert: sellSignalResult.alert,
+        trendAlerts: [trendMonitor.alert],
+        deviationAlerts: [deviationMonitor.alert],
+        deviationData: deviationMonitor.deviationData,
+        weekData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+            k: kdjResult.K.slice(-displayLimit),
+            d: kdjResult.D.slice(-displayLimit),
+            j: kdjResult.J.slice(-displayLimit),
+        },
+        monthData: {
+            dates: monthKlines.slice(-displayLimit).map((k) => k.date),
+            closes: monthKlines.slice(-displayLimit).map((k) => k.close),
+            ma: maResult.ma.slice(-displayLimit),
+            maPeriod: maResult.period,
+        },
+        bollData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+            upper: sellSignalResult.bollData.upper.slice(-displayLimit),
+            middle: sellSignalResult.bollData.middle.slice(-displayLimit),
+            lower: sellSignalResult.bollData.lower.slice(-displayLimit),
+        },
+        rsiData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            values: sellSignalResult.rsiData.slice(-displayLimit),
+        },
+    };
+}
+
 async function buildConsumerWindow({ id, code, name, thresholds, valueHint, hint, tags }) {
     const indexName = '消费类股票';
 
@@ -1642,6 +1737,7 @@ async function main() {
         const hs300Window = await buildHs300Window();
         const chinextWindow = await buildChiNextWindow();
         const csi1000Window = await buildCsi1000Window();
+        const valueEtfWindow = await buildValueEtfWindow();
         const greeWindow = await buildGreeWindow();
         const shuanghuiWindow = await buildShuanghuiWindow();
         const deejWindow = await buildDeejWindow();
@@ -1657,13 +1753,14 @@ async function main() {
         const jinghuWindow = await buildJinghuWindow();
         const crsWindow = await buildCrsWindow();
 
-        const dashboardData = [etfWindow, hs300Window, chinextWindow, csi1000Window, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow, thsWindow, chinamobileWindow, abcbankWindow, sinopecWindow, cnoocWindow, mideaWindow, moutaiWindow, jinghuWindow, crsWindow];
+        const dashboardData = [etfWindow, hs300Window, chinextWindow, csi1000Window, valueEtfWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow, thsWindow, chinamobileWindow, abcbankWindow, sinopecWindow, cnoocWindow, mideaWindow, moutaiWindow, jinghuWindow, crsWindow];
 
         // 板块归类
         etfWindow.category = 'ETF';
         hs300Window.category = 'ETF';
         chinextWindow.category = 'ETF';
         csi1000Window.category = 'ETF';
+        valueEtfWindow.category = 'ETF';
         greeWindow.category = '股票';
         shuanghuiWindow.category = '股票';
         deejWindow.category = '股票';
@@ -1689,6 +1786,7 @@ async function main() {
                 { id: hs300Window.id, stockCode: hs300Window.stockCode, alerts: hs300Window.buyAlerts, sellAlert: hs300Window.sellAlert },
                 { id: chinextWindow.id, stockCode: chinextWindow.stockCode, alerts: chinextWindow.buyAlerts, sellAlert: chinextWindow.sellAlert },
                 { id: csi1000Window.id, stockCode: csi1000Window.stockCode, alerts: csi1000Window.buyAlerts, sellAlert: csi1000Window.sellAlert },
+                { id: valueEtfWindow.id, stockCode: valueEtfWindow.stockCode, alerts: valueEtfWindow.buyAlerts, sellAlert: valueEtfWindow.sellAlert },
                 { id: greeWindow.id, stockCode: greeWindow.stockCode, buyAlerts: greeWindow.buyAlerts, sellAlert: greeWindow.sellAlert },
                 { id: shuanghuiWindow.id, stockCode: shuanghuiWindow.stockCode, buyAlerts: shuanghuiWindow.buyAlerts, sellAlert: shuanghuiWindow.sellAlert },
                 { id: deejWindow.id, stockCode: deejWindow.stockCode, buyAlerts: deejWindow.buyAlerts, sellAlert: deejWindow.sellAlert },

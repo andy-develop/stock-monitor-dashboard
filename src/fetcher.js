@@ -70,9 +70,20 @@ function validateKlines(klines, label, maxStalenessDays = 7) {
  */
 const API_MAX_COUNT = 2000; // stock-api 返回空数组当 count > 2000
 
+async function fetchKlinesWithFallback(code, period, count, adjust) {
+    const batch = await stocks.auto.getKlines(code, { period, count, adjust });
+    if (!batch || batch.length === 0) {
+        if (adjust !== 'none') {
+            console.warn(`${code} ${period}K线 adjust=${adjust} 返回空，回退到 adjust=none`);
+            return stocks.auto.getKlines(code, { period, count, adjust: 'none' });
+        }
+    }
+    return batch || [];
+}
+
 async function fetchKlinesPaginated(code, period, count, adjust) {
     if (count <= API_MAX_COUNT) {
-        return stocks.auto.getKlines(code, { period, count, adjust });
+        return fetchKlinesWithFallback(code, period, count, adjust);
     }
     // 分页：先取最近 API_MAX_COUNT 条，再往前翻
     const all = [];
@@ -80,7 +91,7 @@ async function fetchKlinesPaginated(code, period, count, adjust) {
     let lastDate = null;
     while (remaining > 0) {
         const fetchCount = Math.min(remaining, API_MAX_COUNT);
-        const batch = await stocks.auto.getKlines(code, { period, count: fetchCount, adjust });
+        const batch = await fetchKlinesWithFallback(code, period, fetchCount, adjust);
         if (!batch || batch.length === 0) break;
         if (lastDate) {
             // 过滤掉已获取的（按日期去重）
