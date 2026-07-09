@@ -335,6 +335,61 @@ function evaluateMonthMA60WeekBollBuySignals({ stockName, monthKlines, ma60, wee
 }
 
 /**
+ * 月线 MA60 + 周线 KDJ J<1 买入信号评估（月K线低于MA60 + 周KDJ J值低于1）
+ */
+function evaluateMonthMA60WeekKdjBuySignals({ stockName, monthKlines, ma60, weekKlines, kdj, estimated = false, estimatedAvgFirstYear = null }) {
+    const latestMonthIndex = monthKlines.length - 1;
+    const latestMonthClose = monthKlines[latestMonthIndex].close;
+    const latestMA60 = ma60[latestMonthIndex];
+
+    const latestWeekIndex = weekKlines.length - 1;
+    const latestWeekClose = weekKlines[latestWeekIndex].close;
+    const latestJ = kdj.J[latestWeekIndex];
+
+    const maSuffix = estimated ? '（估算）' : '';
+    const maAvailable = latestMA60 !== null && latestMA60 !== 0;
+    const conditionMA = maAvailable && latestMonthClose < latestMA60;
+    const conditionJ = latestJ < 1;
+    const triggered = conditionMA && conditionJ;
+
+    let title;
+    let reason;
+    if (triggered) {
+        title = `⚠️ 买入信号：月K低于MA60${maSuffix}且周KDJ J<1`;
+        reason = `当前${stockName}月线收盘价 ${latestMonthClose} 低于 MA60${maSuffix}（${latestMA60}）${estimated && estimatedAvgFirstYear !== null ? `，MA60 用上市首年 12 个月均价 ${estimatedAvgFirstYear} 线性外推估算` : ''}，且周线 KDJ 的 J 值为 ${latestJ}（低于安全阈值 1），双条件同时满足，建议关注买入机会。`;
+    } else {
+        title = '✅ 暂无买入信号';
+        const maText = maAvailable
+            ? (latestMonthClose < latestMA60 ? '低于 MA60' : `高于 MA60 ${((latestMonthClose - latestMA60) / latestMA60 * 100).toFixed(2)}%`)
+            : '数据不足';
+        reason = `当前${stockName}月线收盘价 ${latestMonthClose}，MA60${maSuffix} ${maAvailable ? latestMA60 : '数据不足'}（${maText}）${estimated && estimatedAvgFirstYear !== null ? `，MA60 用上市首年 12 个月均价 ${estimatedAvgFirstYear} 线性外推估算` : ''}；周线 KDJ 的 J 值为 ${latestJ}。未同时满足"月K线低于MA60"且"周KDJ J值低于1"。`;
+    }
+
+    return {
+        triggered,
+        alert: {
+            type: triggered ? 'danger' : 'success',
+            title,
+            chartKeys: ['month', 'week'],
+            metrics: [
+                { label: '最新月收盘价', value: latestMonthClose },
+                { label: `MA60${maSuffix}`, value: maAvailable ? latestMA60 : '数据不足' },
+                { label: '最新周收盘价', value: latestWeekClose },
+                { label: '周 KDJ J 值', value: latestJ },
+            ],
+            reason,
+            signalDetails: [
+                { label: `月K线收盘价 < MA60${maSuffix}`, triggered: conditionMA, value: `收盘 ${latestMonthClose} / MA60 ${latestMA60}` },
+                { label: '周 KDJ J 值 < 1', triggered: conditionJ, value: `J = ${latestJ}` },
+            ],
+        },
+        ma60,
+        estimated,
+        estimatedAvgFirstYear,
+    };
+}
+
+/**
  * 消费类股票：买入机会（三阶段底部监控）
  */
 function evaluateConsumerBuyOpportunities({ latestClose, thresholds, valueHint }) {
@@ -978,8 +1033,9 @@ async function buildCsi1000Window() {
 
 /**
  * 价值ETF易方达 (SZ159263)
- * 2025年7月上市，历史不足1年，月线MA用 calculateAdaptiveMonthlyMA 自适应降级
- * 买入信号：周KDJ J<1 + 月K低于自适应MA
+ * 2025年7月上市，历史仅13个月，MA60 用 calculateEstimatedMA60 估算
+ * （用上市首年12个月均价向前补齐缺失月份，线性外推）
+ * 买入信号：月K线低于MA60（估算）且 周KDJ J<1（组合信号，同时满足才触发）
  * 卖出信号：周BOLL+RSI + 日线MA60破位
  * 趋势监控 + 偏离度监控
  */
@@ -999,22 +1055,19 @@ async function buildValueEtfWindow() {
     if (weekKlines.length < 9) throw new Error('周线数据不足，无法计算 KDJ');
 
     const kdjResult = calculateKDJ(weekKlines);
-    const maResult = calculateAdaptiveMonthlyMA(monthKlines);
+    const { ma: ma60Month, estimated, avgFirstYear } = calculateEstimatedMA60(monthKlines);
     const bollResult = calculateBOLL(weekKlines, 20, 2);
     const rsiResult = calculateRSI(weekKlines, 6);
     const ma60Day = calculateMA(dayKlines, 60);
 
-    const latestJ = kdjResult.J[kdjResult.J.length - 1];
-    const latestMonth = monthKlines[monthKlines.length - 1];
-    const latestMA = maResult.ma[maResult.ma.length - 1];
-    const latestWeek = weekKlines[weekKlines.length - 1];
-
-    const buyAlerts = evaluateEtfBuyAlerts({
-        latestWeekClose: latestWeek.close,
-        latestJ,
-        latestMonthClose: latestMonth.close,
-        latestMA,
-        maPeriod: maResult.period,
+    const buySignalResult = evaluateMonthMA60WeekKdjBuySignals({
+        stockName: name,
+        monthKlines,
+        ma60: ma60Month,
+        weekKlines,
+        kdj: kdjResult,
+        estimated,
+        estimatedAvgFirstYear: avgFirstYear,
     });
 
     const sellSignalResult = evaluateEtfSellSignals({
@@ -1039,7 +1092,7 @@ async function buildValueEtfWindow() {
         sellSectionTitle: '卖出信号',
         trendSectionTitle: '趋势监控',
         deviationSectionTitle: '偏离度监控',
-        buyAlerts,
+        buyAlerts: [buySignalResult.alert],
         sellAlert: sellSignalResult.alert,
         trendAlerts: [trendMonitor.alert],
         deviationAlerts: [deviationMonitor.alert],
@@ -1054,8 +1107,10 @@ async function buildValueEtfWindow() {
         monthData: {
             dates: monthKlines.slice(-displayLimit).map((k) => k.date),
             closes: monthKlines.slice(-displayLimit).map((k) => k.close),
-            ma: maResult.ma.slice(-displayLimit),
-            maPeriod: maResult.period,
+            ma: ma60Month.slice(-displayLimit),
+            maPeriod: 60,
+            estimated,
+            estimatedAvgFirstYear: avgFirstYear,
         },
         bollData: {
             dates: weekKlines.slice(-displayLimit).map((k) => k.date),
