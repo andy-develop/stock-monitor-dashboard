@@ -293,6 +293,8 @@
                 deviation: '近10年偏离度曲线（日K · 价格/MA60 - 1）',
                 day: '日K线及 MA5 / MA20 / 10日高点 趋势图',
                 weekMA: '周K线及 MA5 / MA10 趋势图',
+                weekBollMA60: '周K线及 BOLL(20,2) / MA60 趋势图',
+                monthMA20: '月K线及 MA20 趋势图',
             };
             return chartKeys.map(key => {
                 const panelId = `chart-panel-${windowIndex}-${key}`;
@@ -587,6 +589,47 @@
             return chart;
         }
 
+        function initWeekBollMA60Chart(windowIndex, data) {
+            const chart = echarts.init(document.getElementById(`chart-${windowIndex}-weekBollMA60`));
+            chart.setOption({
+                tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                legend: { data: ['周K线', 'BOLL 上轨', 'BOLL 中轨', 'BOLL 下轨', 'MA60'], top: 0 },
+                xAxis: { type: 'category', data: data.weekBollMA60Data.dates },
+                yAxis: { scale: true, splitArea: { show: true } },
+                dataZoom: [{ type: 'inside', start: 50, end: 100 }],
+                series: [
+                    {
+                        name: '周K线', type: 'candlestick', data: data.weekBollMA60Data.candlestick,
+                        itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' }
+                    },
+                    { name: 'BOLL 上轨', type: 'line', data: data.weekBollMA60Data.upper, showSymbol: false, itemStyle: { color: '#ff9800' }, lineStyle: { type: 'dashed' } },
+                    { name: 'BOLL 中轨', type: 'line', data: data.weekBollMA60Data.middle, showSymbol: false, itemStyle: { color: '#9e9e9e' } },
+                    { name: 'BOLL 下轨', type: 'line', data: data.weekBollMA60Data.lower, showSymbol: false, itemStyle: { color: '#00bcd4' }, lineStyle: { type: 'dashed' } },
+                    { name: 'MA60', type: 'line', data: data.weekBollMA60Data.ma60, showSymbol: false, itemStyle: { color: '#3277c9' } }
+                ]
+            });
+            return chart;
+        }
+
+        function initMonthMA20Chart(windowIndex, data) {
+            const chart = echarts.init(document.getElementById(`chart-${windowIndex}-monthMA20`));
+            chart.setOption({
+                tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                legend: { data: ['月K线', 'MA20'], top: 0 },
+                xAxis: { type: 'category', data: data.monthMA20Data.dates },
+                yAxis: { scale: true, splitArea: { show: true } },
+                dataZoom: [{ type: 'inside', start: 0, end: 100 }],
+                series: [
+                    {
+                        name: '月K线', type: 'candlestick', data: data.monthMA20Data.candlestick,
+                        itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' }
+                    },
+                    { name: 'MA20', type: 'line', data: data.monthMA20Data.ma20, showSymbol: false, itemStyle: { color: '#e0a926' } }
+                ]
+            });
+            return chart;
+        }
+
         function initEtfMonthKdjChart(windowIndex, data) {
             const chart = echarts.init(document.getElementById(`chart-${windowIndex}-monthKdj`));
             chart.setOption({
@@ -694,6 +737,8 @@
             else if (chartKey === 'deviation') chart = initDeviationChart(windowIndex, data);
             else if (chartKey === 'day') chart = initGreeDayChart(windowIndex, data);
             else if (chartKey === 'weekMA') chart = initWeekMAChart(windowIndex, data);
+            else if (chartKey === 'weekBollMA60') chart = initWeekBollMA60Chart(windowIndex, data);
+            else if (chartKey === 'monthMA20') chart = initMonthMA20Chart(windowIndex, data);
             if (chart) chartInstances[key] = chart;
             return chart;
         }

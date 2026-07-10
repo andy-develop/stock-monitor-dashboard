@@ -1262,6 +1262,173 @@ async function buildCityInvestmentWindow() {
     };
 }
 
+/**
+ * 可转债ETF：买入信号评估（周K线在MA60下方 AND 周K线收盘价 < BOLL(20,2)下轨，同时满足）
+ */
+function evaluateConvertibleBondBuySignals({ weekKlines, ma60, boll }) {
+    const latestIndex = weekKlines.length - 1;
+    const latestClose = weekKlines[latestIndex].close;
+    const latestMA60 = ma60[latestIndex];
+    const latestLower = boll.lower[latestIndex];
+
+    const maAvailable = latestMA60 !== null && latestMA60 !== undefined;
+    const bollAvailable = latestLower !== null && latestLower !== undefined;
+
+    const conditionMA = maAvailable && latestClose < latestMA60;
+    const conditionBoll = bollAvailable && latestClose < latestLower;
+    const triggered = conditionMA && conditionBoll;
+
+    const maDeviation = maAvailable ? ((latestClose - latestMA60) / latestMA60) * 100 : null;
+    const bollDeviation = bollAvailable ? ((latestClose - latestLower) / latestLower) * 100 : null;
+
+    const title = triggered
+        ? '⚠️ 买入信号：周K线低于 MA60 且跌破 BOLL 下轨'
+        : '✅ 暂无买入信号';
+
+    const reasonParts = [];
+    if (maAvailable) {
+        reasonParts.push(`周K线收盘价 ${latestClose} ${conditionMA ? '低于' : '高于'} MA60（${latestMA60}），偏离 ${maDeviation.toFixed(2)}%`);
+    } else {
+        reasonParts.push('MA60 数据不足');
+    }
+    if (bollAvailable) {
+        reasonParts.push(`收盘价 ${latestClose} ${conditionBoll ? '跌破' : '高于'} BOLL(20,2) 下轨（${latestLower}），偏离 ${bollDeviation.toFixed(2)}%`);
+    } else {
+        reasonParts.push('BOLL 下轨数据不足');
+    }
+
+    const reason = triggered
+        ? `${reasonParts.join('；')}。两个条件同时满足，建议关注买入机会。`
+        : `${reasonParts.join('；')}。未同时满足两个买入条件。`;
+
+    return {
+        triggered,
+        alert: {
+            type: triggered ? 'danger' : 'success',
+            title,
+            chartKeys: ['weekBollMA60'],
+            metrics: [
+                { label: '最新周收盘价', value: latestClose },
+                { label: 'MA60', value: maAvailable ? latestMA60 : '数据不足' },
+                { label: 'MA60 偏离', value: maDeviation !== null ? `${maDeviation.toFixed(2)}%` : '数据不足' },
+                { label: 'BOLL(20,2) 下轨', value: bollAvailable ? latestLower : '数据不足' },
+                { label: 'BOLL 下轨偏离', value: bollDeviation !== null ? `${bollDeviation.toFixed(2)}%` : '数据不足' },
+            ],
+            reason,
+            signalDetails: [
+                { label: '周K线收盘价 < MA60', triggered: conditionMA, value: maAvailable ? `收盘 ${latestClose} / MA60 ${latestMA60}` : '数据不足' },
+                { label: '周K线收盘价 < BOLL(20,2) 下轨', triggered: conditionBoll, value: bollAvailable ? `收盘 ${latestClose} / 下轨 ${latestLower}` : '数据不足' },
+            ],
+        },
+    };
+}
+
+/**
+ * 可转债ETF：卖出信号评估（月K线收盘价偏离 MA20 > 15%）
+ */
+function evaluateConvertibleBondSellSignals({ monthKlines, ma20 }) {
+    const latestIndex = monthKlines.length - 1;
+    const latestClose = monthKlines[latestIndex].close;
+    const latestMA20 = ma20[latestIndex];
+
+    const maAvailable = latestMA20 !== null && latestMA20 !== undefined && latestMA20 !== 0;
+    const deviation = maAvailable ? ((latestClose - latestMA20) / latestMA20) * 100 : null;
+    const triggered = deviation !== null && deviation > 15;
+
+    const title = triggered
+        ? '⚠️ 卖出信号：月K线收盘价偏离 MA20 超过 15%'
+        : '✅ 暂无卖出信号';
+    const reason = triggered
+        ? `当前月K线收盘价 ${latestClose} 高于 MA20（${latestMA20}），偏离 ${deviation.toFixed(2)}%，超过 15% 阈值，建议关注卖出机会。`
+        : `当前月K线收盘价 ${latestClose}，MA20 ${maAvailable ? latestMA20 : '数据不足'}，偏离 ${deviation !== null ? deviation.toFixed(2) + '%' : '数据不足'}，未超过 15% 阈值。`;
+
+    return {
+        triggered,
+        alert: {
+            type: triggered ? 'danger' : 'success',
+            title,
+            chartKeys: ['monthMA20'],
+            metrics: [
+                { label: '最新月收盘价', value: latestClose },
+                { label: 'MA20', value: maAvailable ? latestMA20 : '数据不足' },
+                { label: '偏离度', value: deviation !== null ? `${deviation.toFixed(2)}%` : '数据不足' },
+                { label: '阈值', value: '15%' },
+            ],
+            reason,
+            signalDetails: [
+                { label: '月K线收盘价偏离 MA20 > 15%', triggered, value: deviation !== null ? `偏离 ${deviation.toFixed(2)}%` : '数据不足' },
+            ],
+        },
+    };
+}
+
+/**
+ * 可转债ETF (SH511380)
+ * 买入信号：周K线收盘价 < MA60 AND 周K线收盘价 < BOLL(20,2) 下轨（同时满足）
+ * 卖出信号：月K线收盘价偏离 MA20 > 15%
+ * 趋势监控、偏离度监控暂时空着
+ */
+async function buildConvertibleBondWindow() {
+    const code = 'SH511380';
+    const name = '可转债ETF';
+    const indexName = '可转债指数';
+
+    console.log(`开始获取 ${name} (${code}) 数据...`);
+    const weekKlines = await getKlinesWithCache(code, 'week', WEEKLY_KLINE_FETCH_COUNT);
+    const monthKlines = await getKlinesWithCache(code, 'month', 100);
+    console.log(`  周线数据：${weekKlines.length} 条`);
+    console.log(`  月线数据：${monthKlines.length} 条`);
+
+    if (weekKlines.length < 60) throw new Error('周线数据不足，无法计算 MA60');
+    if (monthKlines.length < 20) throw new Error('月线数据不足，无法计算 MA20');
+
+    const ma60Week = calculateMA(weekKlines, 60);
+    const bollWeek = calculateBOLL(weekKlines, 20, 2);
+    const ma20Month = calculateMA(monthKlines, 20);
+
+    const buySignalResult = evaluateConvertibleBondBuySignals({
+        weekKlines,
+        ma60: ma60Week,
+        boll: bollWeek,
+    });
+
+    const sellSignalResult = evaluateConvertibleBondSellSignals({
+        monthKlines,
+        ma20: ma20Month,
+    });
+
+    const displayLimit = 100;
+
+    return {
+        id: 'convertible-bond',
+        stockName: name,
+        stockCode: code,
+        indexName,
+        updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+        buySectionTitle: '买入信号',
+        sellSectionTitle: '卖出信号',
+        trendSectionTitle: '趋势监控',
+        deviationSectionTitle: '偏离度监控',
+        buyAlerts: [buySignalResult.alert],
+        sellAlert: sellSignalResult.alert,
+        trendAlerts: [],
+        deviationAlerts: [],
+        weekBollMA60Data: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+            ma60: ma60Week.slice(-displayLimit),
+            upper: bollWeek.upper.slice(-displayLimit),
+            middle: bollWeek.middle.slice(-displayLimit),
+            lower: bollWeek.lower.slice(-displayLimit),
+        },
+        monthMA20Data: {
+            dates: monthKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: monthKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+            ma20: ma20Month.slice(-displayLimit),
+        },
+    };
+}
+
 async function buildConsumerWindow({ id, code, name, thresholds, valueHint, hint, tags }) {
     const indexName = '消费类股票';
 
@@ -1930,6 +2097,7 @@ async function main() {
         const csi1000Window = await buildCsi1000Window();
         const valueEtfWindow = await buildValueEtfWindow();
         const cityInvestmentWindow = await buildCityInvestmentWindow();
+        const convertibleBondWindow = await buildConvertibleBondWindow();
         const greeWindow = await buildGreeWindow();
         const shuanghuiWindow = await buildShuanghuiWindow();
         const deejWindow = await buildDeejWindow();
@@ -1945,7 +2113,7 @@ async function main() {
         const jinghuWindow = await buildJinghuWindow();
         const crsWindow = await buildCrsWindow();
 
-        const dashboardData = [etfWindow, hs300Window, chinextWindow, csi1000Window, valueEtfWindow, cityInvestmentWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow, thsWindow, chinamobileWindow, abcbankWindow, sinopecWindow, cnoocWindow, mideaWindow, moutaiWindow, jinghuWindow, crsWindow];
+        const dashboardData = [etfWindow, hs300Window, chinextWindow, csi1000Window, valueEtfWindow, cityInvestmentWindow, convertibleBondWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow, thsWindow, chinamobileWindow, abcbankWindow, sinopecWindow, cnoocWindow, mideaWindow, moutaiWindow, jinghuWindow, crsWindow];
 
         // 板块归类
         etfWindow.category = 'ETF';
@@ -1954,6 +2122,7 @@ async function main() {
         csi1000Window.category = 'ETF';
         valueEtfWindow.category = 'ETF';
         cityInvestmentWindow.category = 'ETF';
+        convertibleBondWindow.category = 'ETF';
         greeWindow.category = '股票';
         shuanghuiWindow.category = '股票';
         deejWindow.category = '股票';
@@ -1981,6 +2150,7 @@ async function main() {
                 { id: csi1000Window.id, stockCode: csi1000Window.stockCode, alerts: csi1000Window.buyAlerts, sellAlert: csi1000Window.sellAlert },
                 { id: valueEtfWindow.id, stockCode: valueEtfWindow.stockCode, alerts: valueEtfWindow.buyAlerts, sellAlert: valueEtfWindow.sellAlert },
                 { id: cityInvestmentWindow.id, stockCode: cityInvestmentWindow.stockCode, alerts: cityInvestmentWindow.buyAlerts, sellAlert: cityInvestmentWindow.sellAlert },
+                { id: convertibleBondWindow.id, stockCode: convertibleBondWindow.stockCode, alerts: convertibleBondWindow.buyAlerts, sellAlert: convertibleBondWindow.sellAlert },
                 { id: greeWindow.id, stockCode: greeWindow.stockCode, buyAlerts: greeWindow.buyAlerts, sellAlert: greeWindow.sellAlert },
                 { id: shuanghuiWindow.id, stockCode: shuanghuiWindow.stockCode, buyAlerts: shuanghuiWindow.buyAlerts, sellAlert: shuanghuiWindow.sellAlert },
                 { id: deejWindow.id, stockCode: deejWindow.stockCode, buyAlerts: deejWindow.buyAlerts, sellAlert: deejWindow.sellAlert },
