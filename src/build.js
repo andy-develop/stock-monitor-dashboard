@@ -1126,6 +1126,142 @@ async function buildValueEtfWindow() {
     };
 }
 
+/**
+ * 城投债ETF海富通：买入信号评估（周K线收盘价 < MA10）
+ */
+function evaluateCityInvestmentBuySignals({ weekKlines, ma10 }) {
+    const latestIndex = weekKlines.length - 1;
+    const latestClose = weekKlines[latestIndex].close;
+    const latestMA10 = ma10[latestIndex];
+
+    const maAvailable = latestMA10 !== null && latestMA10 !== undefined;
+    const triggered = maAvailable && latestClose < latestMA10;
+    const deviation = maAvailable ? ((latestClose - latestMA10) / latestMA10) * 100 : null;
+
+    const deviationText = deviation !== null
+        ? (deviation < 0 ? `低于 MA10 ${Math.abs(deviation).toFixed(2)}%` : `高于 MA10 ${deviation.toFixed(2)}%`)
+        : '数据不足';
+
+    const title = triggered
+        ? '⚠️ 买入信号：周K线收盘价低于 MA10'
+        : '✅ 暂无买入信号';
+    const reason = triggered
+        ? `当前周K线收盘价 ${latestClose} 低于 MA10（${latestMA10}），偏离 ${deviation.toFixed(2)}%，建议关注买入机会。`
+        : `当前周K线收盘价 ${latestClose}，MA10 ${maAvailable ? latestMA10 : '数据不足'}（${deviationText}），未跌破 MA10。`;
+
+    return {
+        triggered,
+        alert: {
+            type: triggered ? 'danger' : 'success',
+            title,
+            chartKeys: ['weekMA'],
+            metrics: [
+                { label: '最新周收盘价', value: latestClose },
+                { label: 'MA10', value: maAvailable ? latestMA10 : '数据不足' },
+                { label: '偏离度', value: deviation !== null ? `${deviation.toFixed(2)}%` : '数据不足' },
+            ],
+            reason,
+            signalDetails: [
+                { label: '周K线收盘价 < MA10', triggered, value: `收盘 ${latestClose} / MA10 ${maAvailable ? latestMA10 : '数据不足'}` },
+            ],
+        },
+    };
+}
+
+/**
+ * 城投债ETF海富通：卖出信号评估（周K线收盘价偏离 MA5 > 0.3%）
+ */
+function evaluateCityInvestmentSellSignals({ weekKlines, ma5 }) {
+    const latestIndex = weekKlines.length - 1;
+    const latestClose = weekKlines[latestIndex].close;
+    const latestMA5 = ma5[latestIndex];
+
+    const maAvailable = latestMA5 !== null && latestMA5 !== undefined && latestMA5 !== 0;
+    const deviation = maAvailable ? ((latestClose - latestMA5) / latestMA5) * 100 : null;
+    const triggered = deviation !== null && deviation > 0.3;
+
+    const title = triggered
+        ? '⚠️ 卖出信号：周K线收盘价偏离 MA5 超过 0.3%'
+        : '✅ 暂无卖出信号';
+    const reason = triggered
+        ? `当前周K线收盘价 ${latestClose} 高于 MA5（${latestMA5}），偏离 ${deviation.toFixed(2)}%，超过 0.3% 阈值，建议关注卖出机会。`
+        : `当前周K线收盘价 ${latestClose}，MA5 ${maAvailable ? latestMA5 : '数据不足'}，偏离 ${deviation !== null ? deviation.toFixed(2) + '%' : '数据不足'}，未超过 0.3% 阈值。`;
+
+    return {
+        triggered,
+        alert: {
+            type: triggered ? 'danger' : 'success',
+            title,
+            chartKeys: ['weekMA'],
+            metrics: [
+                { label: '最新周收盘价', value: latestClose },
+                { label: 'MA5', value: maAvailable ? latestMA5 : '数据不足' },
+                { label: '偏离度', value: deviation !== null ? `${deviation.toFixed(2)}%` : '数据不足' },
+                { label: '阈值', value: '0.3%' },
+            ],
+            reason,
+            signalDetails: [
+                { label: '周K线收盘价偏离 MA5 > 0.3%', triggered, value: deviation !== null ? `偏离 ${deviation.toFixed(2)}%` : '数据不足' },
+            ],
+        },
+    };
+}
+
+/**
+ * 城投债ETF海富通 (SH511220)
+ * 买入信号：周K线收盘价 < MA10
+ * 卖出信号：周K线收盘价偏离 MA5 > 0.3%
+ * 趋势监控、偏离度监控暂时空着
+ */
+async function buildCityInvestmentWindow() {
+    const code = 'SH511220';
+    const name = '城投债ETF海富通';
+    const indexName = '城投债';
+
+    console.log(`开始获取 ${name} (${code}) 数据...`);
+    const weekKlines = await getKlinesWithCache(code, 'week', WEEKLY_KLINE_FETCH_COUNT);
+    console.log(`  周线数据：${weekKlines.length} 条`);
+
+    if (weekKlines.length < 10) throw new Error('周线数据不足，无法计算 MA10');
+
+    const ma5Week = calculateMA(weekKlines, 5);
+    const ma10Week = calculateMA(weekKlines, 10);
+
+    const buySignalResult = evaluateCityInvestmentBuySignals({
+        weekKlines,
+        ma10: ma10Week,
+    });
+
+    const sellSignalResult = evaluateCityInvestmentSellSignals({
+        weekKlines,
+        ma5: ma5Week,
+    });
+
+    const displayLimit = 100;
+
+    return {
+        id: 'city-investment',
+        stockName: name,
+        stockCode: code,
+        indexName,
+        updateTime: new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+        buySectionTitle: '买入信号',
+        sellSectionTitle: '卖出信号',
+        trendSectionTitle: '趋势监控',
+        deviationSectionTitle: '偏离度监控',
+        buyAlerts: [buySignalResult.alert],
+        sellAlert: sellSignalResult.alert,
+        trendAlerts: [],
+        deviationAlerts: [],
+        weekMAData: {
+            dates: weekKlines.slice(-displayLimit).map((k) => k.date),
+            candlestick: weekKlines.slice(-displayLimit).map((k) => [k.open, k.close, k.low, k.high]),
+            ma5: ma5Week.slice(-displayLimit),
+            ma10: ma10Week.slice(-displayLimit),
+        },
+    };
+}
+
 async function buildConsumerWindow({ id, code, name, thresholds, valueHint, hint, tags }) {
     const indexName = '消费类股票';
 
@@ -1793,6 +1929,7 @@ async function main() {
         const chinextWindow = await buildChiNextWindow();
         const csi1000Window = await buildCsi1000Window();
         const valueEtfWindow = await buildValueEtfWindow();
+        const cityInvestmentWindow = await buildCityInvestmentWindow();
         const greeWindow = await buildGreeWindow();
         const shuanghuiWindow = await buildShuanghuiWindow();
         const deejWindow = await buildDeejWindow();
@@ -1808,7 +1945,7 @@ async function main() {
         const jinghuWindow = await buildJinghuWindow();
         const crsWindow = await buildCrsWindow();
 
-        const dashboardData = [etfWindow, hs300Window, chinextWindow, csi1000Window, valueEtfWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow, thsWindow, chinamobileWindow, abcbankWindow, sinopecWindow, cnoocWindow, mideaWindow, moutaiWindow, jinghuWindow, crsWindow];
+        const dashboardData = [etfWindow, hs300Window, chinextWindow, csi1000Window, valueEtfWindow, cityInvestmentWindow, greeWindow, shuanghuiWindow, deejWindow, sanquanWindow, shenhuaWindow, thsWindow, chinamobileWindow, abcbankWindow, sinopecWindow, cnoocWindow, mideaWindow, moutaiWindow, jinghuWindow, crsWindow];
 
         // 板块归类
         etfWindow.category = 'ETF';
@@ -1816,6 +1953,7 @@ async function main() {
         chinextWindow.category = 'ETF';
         csi1000Window.category = 'ETF';
         valueEtfWindow.category = 'ETF';
+        cityInvestmentWindow.category = 'ETF';
         greeWindow.category = '股票';
         shuanghuiWindow.category = '股票';
         deejWindow.category = '股票';
@@ -1842,6 +1980,7 @@ async function main() {
                 { id: chinextWindow.id, stockCode: chinextWindow.stockCode, alerts: chinextWindow.buyAlerts, sellAlert: chinextWindow.sellAlert },
                 { id: csi1000Window.id, stockCode: csi1000Window.stockCode, alerts: csi1000Window.buyAlerts, sellAlert: csi1000Window.sellAlert },
                 { id: valueEtfWindow.id, stockCode: valueEtfWindow.stockCode, alerts: valueEtfWindow.buyAlerts, sellAlert: valueEtfWindow.sellAlert },
+                { id: cityInvestmentWindow.id, stockCode: cityInvestmentWindow.stockCode, alerts: cityInvestmentWindow.buyAlerts, sellAlert: cityInvestmentWindow.sellAlert },
                 { id: greeWindow.id, stockCode: greeWindow.stockCode, buyAlerts: greeWindow.buyAlerts, sellAlert: greeWindow.sellAlert },
                 { id: shuanghuiWindow.id, stockCode: shuanghuiWindow.stockCode, buyAlerts: shuanghuiWindow.buyAlerts, sellAlert: shuanghuiWindow.sellAlert },
                 { id: deejWindow.id, stockCode: deejWindow.stockCode, buyAlerts: deejWindow.buyAlerts, sellAlert: deejWindow.sellAlert },

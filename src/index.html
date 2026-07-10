@@ -292,6 +292,7 @@
                 rsi: '周K线 RSI(6) 趋势图',
                 deviation: '近10年偏离度曲线（日K · 价格/MA60 - 1）',
                 day: '日K线及 MA5 / MA20 / 10日高点 趋势图',
+                weekMA: '周K线及 MA5 / MA10 趋势图',
             };
             return chartKeys.map(key => {
                 const panelId = `chart-panel-${windowIndex}-${key}`;
@@ -566,6 +567,26 @@
             return chart;
         }
 
+        function initWeekMAChart(windowIndex, data) {
+            const chart = echarts.init(document.getElementById(`chart-${windowIndex}-weekMA`));
+            chart.setOption({
+                tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+                legend: { data: ['周K线', 'MA5', 'MA10'], top: 0 },
+                xAxis: { type: 'category', data: data.weekMAData.dates },
+                yAxis: { scale: true, splitArea: { show: true } },
+                dataZoom: [{ type: 'inside', start: 50, end: 100 }],
+                series: [
+                    {
+                        name: '周K线', type: 'candlestick', data: data.weekMAData.candlestick,
+                        itemStyle: { color: '#ef5350', color0: '#26a69a', borderColor: '#ef5350', borderColor0: '#26a69a' }
+                    },
+                    { name: 'MA5', type: 'line', data: data.weekMAData.ma5, showSymbol: false, itemStyle: { color: '#e0a926' } },
+                    { name: 'MA10', type: 'line', data: data.weekMAData.ma10, showSymbol: false, itemStyle: { color: '#3277c9' } }
+                ]
+            });
+            return chart;
+        }
+
         function initEtfMonthKdjChart(windowIndex, data) {
             const chart = echarts.init(document.getElementById(`chart-${windowIndex}-monthKdj`));
             chart.setOption({
@@ -672,6 +693,7 @@
             else if (chartKey === 'rsi') chart = initEtfRsiChart(windowIndex, data);
             else if (chartKey === 'deviation') chart = initDeviationChart(windowIndex, data);
             else if (chartKey === 'day') chart = initGreeDayChart(windowIndex, data);
+            else if (chartKey === 'weekMA') chart = initWeekMAChart(windowIndex, data);
             if (chart) chartInstances[key] = chart;
             return chart;
         }
