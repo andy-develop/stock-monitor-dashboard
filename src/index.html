@@ -234,12 +234,97 @@
             background: #eee;
             margin: 20px 0;
         }
+        /* 今日小结 */
+        .summary-panel {
+            background: #fff;
+            border-radius: 10px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .summary-panel .summary-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 16px;
+            margin-bottom: 16px;
+            border-bottom: 1px solid #eee;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .summary-panel .summary-header h1 {
+            margin: 0;
+            font-size: 22px;
+            color: #1a1a1a;
+        }
+        .summary-panel .summary-header .meta { color: #888; font-size: 13px; }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .summary-section {
+            border: 1px solid #eee;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .summary-section-title {
+            padding: 12px 18px;
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            background: #2c3e50;
+        }
+        .summary-section-title.buy { background: #1565c0; }
+        .summary-section-title.sell { background: #c62828; }
+        .summary-section-body { padding: 14px 18px; }
+        .summary-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .summary-item:last-child { margin-bottom: 0; }
+        .summary-item.buy { background: #f0f7ff; border-left: 4px solid #1565c0; }
+        .summary-item.sell { background: #fff0f0; border-left: 4px solid #c62828; }
+        .summary-item .item-name { font-weight: 600; flex-shrink: 0; }
+        .summary-item .item-code { font-size: 12px; color: #888; flex-shrink: 0; }
+        .summary-item .item-reason { font-size: 13px; color: #555; flex: 1; }
+        .summary-item .item-tag {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        .summary-item .item-tag.buy { background: #e3f2fd; color: #1565c0; }
+        .summary-item .item-tag.sell { background: #ffebee; color: #c62828; }
+        .summary-empty {
+            padding: 24px 18px;
+            text-align: center;
+            color: #999;
+            font-size: 14px;
+        }
+        .summary-category-tag {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            margin-right: 6px;
+        }
+        .summary-category-tag.etf { background: #f0f7ff; color: #1565c0; }
+        .summary-category-tag.stock { background: #f6ffed; color: #2e7d32; }
         @media (max-width: 768px) {
             body { padding: 10px; }
             .header { flex-direction: column; align-items: flex-start; }
             .header .meta { text-align: left; }
             .chart { height: 360px; }
             .chart-panel.expanded { max-height: 420px; }
+            .summary-grid { grid-template-columns: 1fr; }
+            .summary-item { flex-direction: column; align-items: flex-start; gap: 4px; }
         }
     </style>
 </head>
@@ -420,6 +505,104 @@
                 categoryTitle.classList.add('danger');
             }
         }
+
+        // === 今日小结 ===
+        function isAlertTriggered(alert) {
+            if (!alert) return false;
+            return alert.type === 'danger' || alert.type === 'warning' || alert.type === 'yellow';
+        }
+
+        function buildSummary() {
+            const buyTriggered = [];
+            const sellTriggered = [];
+
+            windows.forEach((w) => {
+                const category = w.category || '其他';
+                const catClass = category === 'ETF' ? 'etf' : 'stock';
+
+                // 买入信号
+                if (w.buyAlerts && w.buyAlerts.length > 0) {
+                    w.buyAlerts.forEach(a => {
+                        if (isAlertTriggered(a)) {
+                            buyTriggered.push({
+                                name: w.stockName,
+                                code: w.stockCode,
+                                category: catClass,
+                                title: a.title,
+                                reason: a.reason,
+                            });
+                        }
+                    });
+                }
+
+                // 卖出信号
+                if (w.sellAlert) {
+                    if (isAlertTriggered(w.sellAlert)) {
+                        sellTriggered.push({
+                            name: w.stockName,
+                            code: w.stockCode,
+                            category: catClass,
+                            title: w.sellAlert.title,
+                            reason: w.sellAlert.reason,
+                        });
+                    }
+                }
+            });
+
+            return { buyTriggered, sellTriggered };
+        }
+
+        function renderSummaryItem(item, type) {
+            const catLabel = item.category === 'etf' ? 'ETF' : '股票';
+            return `
+                <div class="summary-item ${type}">
+                    <span class="summary-category-tag ${item.category}">${catLabel}</span>
+                    <span class="item-name">${item.name}</span>
+                    <span class="item-code">${item.code}</span>
+                    <span class="item-reason">${item.reason}</span>
+                    <span class="item-tag ${type}">${type === 'buy' ? '买入' : '卖出'}</span>
+                </div>
+            `;
+        }
+
+        function renderSummary() {
+            const summary = buildSummary();
+            const updateTime = windows[0]?.updateTime || '';
+
+            const buyHtml = summary.buyTriggered.length > 0
+                ? summary.buyTriggered.map(item => renderSummaryItem(item, 'buy')).join('')
+                : '<div class="summary-empty">今日无 ETF/股票 触发买入信号 🟢</div>';
+
+            const sellHtml = summary.sellTriggered.length > 0
+                ? summary.sellTriggered.map(item => renderSummaryItem(item, 'sell')).join('')
+                : '<div class="summary-empty">今日无 ETF/股票 触发卖出信号 🟢</div>';
+
+            const panel = document.createElement('div');
+            panel.className = 'summary-panel';
+            panel.innerHTML = `
+                <div class="summary-header">
+                    <h1>📋 今日小结</h1>
+                    <div class="meta">更新时间：${updateTime}</div>
+                </div>
+                <div class="summary-grid">
+                    <div class="summary-section">
+                        <div class="summary-section-title buy">买入信号（${summary.buyTriggered.length}）</div>
+                        <div class="summary-section-body">
+                            ${buyHtml}
+                        </div>
+                    </div>
+                    <div class="summary-section">
+                        <div class="summary-section-title sell">卖出信号（${summary.sellTriggered.length}）</div>
+                        <div class="summary-section-body">
+                            ${sellHtml}
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(panel);
+        }
+
+        renderSummary();
 
         // 按板块分组渲染
         const categories = {};
