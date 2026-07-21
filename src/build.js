@@ -33,6 +33,15 @@ function copyEcharts() {
     console.log(`已复制 ECharts 到 ${path.relative(__dirname, ECHARTS_DEST)}`);
 }
 
+function copyCname() {
+    const cnameSrc = path.join(__dirname, '../CNAME');
+    const cnameDest = path.join(DIST_DIR, 'CNAME');
+    if (fs.existsSync(cnameSrc)) {
+        fs.copyFileSync(cnameSrc, cnameDest);
+        console.log(`已复制 CNAME 到 ${path.relative(__dirname, cnameDest)}`);
+    }
+}
+
 /**
  * ETF：买入信号评估
  */
@@ -2260,6 +2269,7 @@ async function main() {
 
         renderHtml(dashboardData, DIST_DIR);
         copyEcharts();
+        copyCname();
 
         saveLastRun({
             updateTime: etfWindow.updateTime,
