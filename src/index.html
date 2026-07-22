@@ -620,6 +620,18 @@
             color: var(--sell);
         }
 
+        .summary-item.clickable {
+            cursor: pointer;
+            transition: box-shadow 0.2s ease, filter 0.2s ease;
+        }
+        .summary-item.clickable:hover {
+            box-shadow: 0 0 0 2px rgba(12, 111, 143, 0.3);
+            filter: brightness(0.97);
+        }
+        .summary-item.clickable.sell:hover {
+            box-shadow: 0 0 0 2px rgba(180, 35, 24, 0.3);
+        }
+
         .summary-empty {
             padding: 28px 16px;
             text-align: center;
@@ -788,12 +800,13 @@
             return String(title || '').replace(/^[⚠️✅📋🟢]\s*/u, '').trim();
         }
 
-        function renderAlertCard(alert, windowIndex) {
+        function renderAlertCard(alert, windowIndex, alertIndex, sectionKey) {
             const chartsHtml = renderChartsHtml(windowIndex, alert.chartKeys || []);
             const detailsHtml = renderSignalDetails(alert.signalDetails);
             const metricsHtml = renderAlertMetrics(alert.metrics);
+            const alertId = `alert-${windowIndex}-${sectionKey || 'default'}-${alertIndex !== undefined ? alertIndex : 'default'}`;
             return `
-                <div class="alert-card alert-${alert.type}">
+                <div class="alert-card alert-${alert.type}" id="${alertId}">
                     <h3>${cleanAlertTitle(alert.title)}</h3>
                     <p>${alert.reason}</p>
                     ${metricsHtml}
@@ -835,7 +848,7 @@
             const sectionsHtml = sections.map(section => {
                 const listId = `${section.key}-list-${index}`;
                 const alertsHtml = section.alerts.length > 0
-                    ? section.alerts.map(a => renderAlertCard(a, index)).join('')
+                    ? section.alerts.map((a, ai) => renderAlertCard(a, index, ai, section.key)).join('')
                     : '<div class="empty-state">暂无信号</div>';
                 return `
                     <div class="signal-card">
@@ -905,12 +918,12 @@
             const buyTriggered = [];
             const sellTriggered = [];
 
-            windows.forEach((w) => {
+            windows.forEach((w, wi) => {
                 const category = w.category || '其他';
                 const catClass = category === 'ETF' ? 'etf' : 'stock';
 
                 if (w.buyAlerts && w.buyAlerts.length > 0) {
-                    w.buyAlerts.forEach(a => {
+                    w.buyAlerts.forEach((a, ai) => {
                         if (isAlertTriggered(a)) {
                             buyTriggered.push({
                                 name: w.stockName,
@@ -918,6 +931,9 @@
                                 category: catClass,
                                 title: a.title,
                                 reason: a.reason,
+                                windowIndex: wi,
+                                alertIndex: ai,
+                                sectionKey: 'buy',
                             });
                         }
                     });
@@ -931,6 +947,9 @@
                             category: catClass,
                             title: w.sellAlert.title,
                             reason: w.sellAlert.reason,
+                            windowIndex: wi,
+                            alertIndex: 0,
+                            sectionKey: 'sell',
                         });
                     }
                 }
@@ -941,8 +960,10 @@
 
         function renderSummaryItem(item, type) {
             const catLabel = item.category === 'etf' ? 'ETF' : '股票';
+            const targetId = `alert-${item.windowIndex}-${item.sectionKey}-${item.alertIndex}`;
+            const listId = `${item.sectionKey}-list-${item.windowIndex}`;
             return `
-                <div class="summary-item ${type}">
+                <div class="summary-item ${type} clickable" data-alert-id="${targetId}" data-list-id="${listId}">
                     <span class="summary-category-tag ${item.category}">${catLabel}</span>
                     <span class="item-name">${item.name}</span>
                     <span class="item-code">${item.code}</span>
@@ -990,6 +1011,55 @@
         }
 
         renderSummary();
+
+        // 今日小结：点击跳转到对应信号详情
+        function jumpToAlert(alertId, listId) {
+            const alertEl = document.getElementById(alertId);
+            if (!alertEl) return;
+
+            // 找到 signal-card 的 list 容器
+            const list = document.getElementById(listId);
+            if (list) {
+                const signalTitle = document.querySelector(`.signal-title[data-target="${listId}"]`);
+                const toggleBtn = signalTitle?.querySelector('.signal-toggle-btn');
+                if (list.classList.contains('collapsed')) {
+                    list.classList.remove('collapsed');
+                    list.classList.add('expanded');
+                    if (toggleBtn) toggleBtn.innerText = '收起';
+                }
+                handleDeviationAutoExpand(listId);
+            }
+
+            // 找到 window-group 并展开其所属 category
+            const windowGroup = alertEl.closest('.window-group');
+            if (windowGroup) {
+                const categoryContent = windowGroup.parentElement;
+                if (categoryContent && categoryContent.classList.contains('collapsed')) {
+                    const catId = categoryContent.id;
+                    const catHeader = document.querySelector(`.category-header[data-target="${catId}"]`);
+                    const catBtn = catHeader?.querySelector('.signal-toggle-btn');
+                    categoryContent.classList.remove('collapsed');
+                    categoryContent.classList.add('expanded');
+                    if (catBtn) catBtn.innerText = '收起';
+                }
+            }
+
+            // 延迟滚动等 DOM 展开过渡完成
+            setTimeout(() => {
+                alertEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                alertEl.style.transition = 'box-shadow 0.5s ease';
+                alertEl.style.boxShadow = '0 0 0 3px rgba(12, 111, 143, 0.4)';
+                setTimeout(() => { alertEl.style.boxShadow = ''; }, 2500);
+            }, 500);
+        }
+
+        document.querySelectorAll('.summary-item.clickable').forEach(el => {
+            el.addEventListener('click', () => {
+                const alertId = el.getAttribute('data-alert-id');
+                const listId = el.getAttribute('data-list-id');
+                jumpToAlert(alertId, listId);
+            });
+        });
 
         const categories = {};
         windows.forEach((w, i) => {
